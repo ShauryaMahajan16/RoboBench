@@ -9,7 +9,7 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-".venv\Scripts\python.exe" "compare_gui.py"
+".venv\Scripts\python.exe" "noise_gui.py"
 
 if errorlevel 1 (
     echo.
