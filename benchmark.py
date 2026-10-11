@@ -5,6 +5,7 @@ import statistics
 import time
 from pathlib import Path
 
+from bfs import find_path_bfs
 from planner import find_path
 
 START = (60, 200)
@@ -19,30 +20,27 @@ TESTS = [
     ("Clear map", [], True, 480),
     (
         "Two obstacles",
-        [
-            (200, 100, 260, 280),
-            (360, 220, 440, 300),
-        ],
+        [(200, 100, 260, 280), (360, 220, 440, 300)],
         True,
         680,
     ),
     ("Blocking wall", [(280, 0, 320, 400)], False, None),
 ]
 
-ALGORITHMS = [
-    ("A-star", True),
-    ("Dijkstra", False),
-]
+ALGORITHMS = ["A-star", "Dijkstra", "BFS"]
 
 
-def run_planner(obstacles, use_heuristic):
+def run_planner(algorithm, obstacles, stats):
+    if algorithm == "BFS":
+        return find_path_bfs(
+            START, GOAL, obstacles, ROBOT_RADIUS, CELL_SIZE,
+            stats=stats,
+        )
+
     return find_path(
-        START,
-        GOAL,
-        obstacles,
-        ROBOT_RADIUS,
-        CELL_SIZE,
-        use_heuristic=use_heuristic,
+        START, GOAL, obstacles, ROBOT_RADIUS, CELL_SIZE,
+        use_heuristic=(algorithm == "A-star"),
+        stats=stats,
     )
 
 
@@ -54,12 +52,10 @@ def path_distance(path):
 
 
 def check_result(path, expected_success, expected_distance):
-    success = bool(path)
-
-    if success != expected_success:
+    if bool(path) != expected_success:
         return False
 
-    if not success:
+    if not path:
         return True
 
     return (
@@ -70,30 +66,29 @@ def check_result(path, expected_success, expected_distance):
 
 
 def main():
-    # A fixed seed makes the order of trials reproducible.
     rng = random.Random(42)
-
     rows = []
     summary_rows = []
     passed = 0
 
     for map_name, obstacles, expected_success, expected_distance in TESTS:
-        timings = {name: [] for name, _ in ALGORITHMS}
-        routes_found = {name: 0 for name, _ in ALGORITHMS}
+        timings = {name: [] for name in ALGORITHMS}
+        expansions = {name: [] for name in ALGORITHMS}
+        routes_found = {name: 0 for name in ALGORITHMS}
 
-        # Warm up both algorithms before recording timings.
-        for _, use_heuristic in ALGORITHMS:
+        for algorithm in ALGORITHMS:
             for _ in range(WARMUP_RUNS):
-                run_planner(obstacles, use_heuristic)
+                run_planner(algorithm, obstacles, {})
 
         for trial in range(1, REPEATS + 1):
-            # Vary which algorithm runs first.
             order = ALGORITHMS.copy()
             rng.shuffle(order)
 
-            for algorithm, use_heuristic in order:
+            for algorithm in order:
+                stats = {}
+
                 started = time.perf_counter_ns()
-                path = run_planner(obstacles, use_heuristic)
+                path = run_planner(algorithm, obstacles, stats)
                 elapsed_ms = (
                     time.perf_counter_ns() - started
                 ) / 1_000_000
@@ -105,6 +100,7 @@ def main():
                 )
 
                 timings[algorithm].append(elapsed_ms)
+                expansions[algorithm].append(stats["nodes_expanded"])
                 routes_found[algorithm] += int(success)
                 passed += int(correct)
 
@@ -117,15 +113,17 @@ def main():
                         distance if distance is not None else ""
                     ),
                     "planning_time_ms": elapsed_ms,
+                    "nodes_expanded": stats["nodes_expanded"],
                     "check_passed": correct,
                 })
 
         print(f"\nMap: {map_name}")
 
-        for algorithm, _ in ALGORITHMS:
-            samples = timings[algorithm]
-            median_ms = statistics.median(samples)
-            mean_ms = statistics.mean(samples)
+        for algorithm in ALGORITHMS:
+            median_ms = statistics.median(timings[algorithm])
+            mean_ms = statistics.mean(timings[algorithm])
+            mean_nodes = statistics.mean(expansions[algorithm])
+
             distance_text = (
                 f"{expected_distance:.1f} px"
                 if expected_success else "N/A"
@@ -133,9 +131,9 @@ def main():
 
             print(
                 f"  {algorithm:8} | "
-                f"Routes found: {routes_found[algorithm]}/{REPEATS} | "
+                f"Routes: {routes_found[algorithm]}/{REPEATS} | "
                 f"Median: {median_ms:.3f} ms | "
-                f"Mean: {mean_ms:.3f} ms | "
+                f"Mean nodes: {mean_nodes:.1f} | "
                 f"Distance: {distance_text}"
             )
 
@@ -146,9 +144,9 @@ def main():
                 "routes_found": routes_found[algorithm],
                 "median_planning_ms": median_ms,
                 "mean_planning_ms": mean_ms,
+                "mean_nodes_expanded": mean_nodes,
             })
 
-    # Save beside this script, regardless of terminal location.
     output_folder = Path(__file__).resolve().parent / "results"
     output_folder.mkdir(exist_ok=True)
 

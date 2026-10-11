@@ -3,6 +3,7 @@ import math
 import statistics
 from pathlib import Path
 
+from bfs import find_path_bfs
 from planner import find_path
 from test_maps import (
     START,
@@ -15,35 +16,37 @@ from test_maps import (
     validate_path,
 )
 
-ALGORITHMS = [
-    ("A-star", True),
-    ("Dijkstra", False),
-]
+ALGORITHMS = ["A-star", "Dijkstra", "BFS"]
+
+
+def run_planner(algorithm, obstacles, stats):
+    if algorithm == "BFS":
+        return find_path_bfs(
+            START, GOAL, obstacles, RADIUS, CELL_SIZE,
+            stats=stats,
+        )
+
+    return find_path(
+        START, GOAL, obstacles, RADIUS, CELL_SIZE,
+        use_heuristic=(algorithm == "A-star"),
+        stats=stats,
+    )
 
 
 def main():
     rows = []
     counts = {
         name: {"reachable": [], "no_route": []}
-        for name, _ in ALGORITHMS
+        for name in ALGORITHMS
     }
 
     for seed in range(MAP_COUNT):
         obstacles = generate_obstacles(seed)
         paths = {}
 
-        for algorithm, use_heuristic in ALGORITHMS:
+        for algorithm in ALGORITHMS:
             stats = {}
-
-            path = find_path(
-                START,
-                GOAL,
-                obstacles,
-                RADIUS,
-                CELL_SIZE,
-                use_heuristic=use_heuristic,
-                stats=stats,
-            )
+            path = run_planner(algorithm, obstacles, stats)
 
             validate_path(path, obstacles)
             paths[algorithm] = path
@@ -59,16 +62,22 @@ def main():
                 "nodes_expanded": stats["nodes_expanded"],
             })
 
-        astar = paths["A-star"]
-        dijkstra = paths["Dijkstra"]
+        reference = paths["Dijkstra"]
 
-        if bool(astar) != bool(dijkstra):
-            raise RuntimeError(f"Reachability mismatch on seed {seed}.")
+        for algorithm in ALGORITHMS:
+            path = paths[algorithm]
 
-        if astar and not math.isclose(
-            route_distance(astar), route_distance(dijkstra)
-        ):
-            raise RuntimeError(f"Distance mismatch on seed {seed}.")
+            if bool(path) != bool(reference):
+                raise RuntimeError(
+                    f"{algorithm}: reachability mismatch on seed {seed}."
+                )
+
+            if path and not math.isclose(
+                route_distance(path), route_distance(reference)
+            ):
+                raise RuntimeError(
+                    f"{algorithm}: distance mismatch on seed {seed}."
+                )
 
     for group, title in [
         ("reachable", "Maps with a route"),
@@ -76,7 +85,7 @@ def main():
     ]:
         print(f"\n{title}")
 
-        for algorithm, _ in ALGORITHMS:
+        for algorithm in ALGORITHMS:
             samples = counts[algorithm][group]
 
             if not samples:
@@ -101,7 +110,7 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"\nAll {MAP_COUNT} map comparisons passed.")
+    print(f"\nAll {MAP_COUNT} three-algorithm map comparisons passed.")
     print(f"Results saved to: {output_file}")
 
 
