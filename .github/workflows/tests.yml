@@ -39,5 +39,11 @@ jobs:
       - name: Check search effort
         run: python exploration.py
 
-      - name: Check benchmark results
+      - name: Check fixed-map benchmark
         run: python benchmark.py
+
+      - name: Check offset passages
+        run: python offset_passages.py
+
+      - name: Check coarse-to-fine planning
+        run: python test_adaptive.py
