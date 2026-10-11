@@ -41,6 +41,59 @@ jobs:
       - name: Check generated maps
         run: python test_maps.py
 
+      - name: Check BFS against A-star and Dijkstra
+        run: python test_bfs.py
+
+      - name: Check search-effort comparisons
+        run: python exploration.py
+
+      - name: Run benchmark correctness checks
+        run: python benchmark.pyname: RoboBench Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.14"]
+
+    steps:
+      - name: Download repository code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Check inputs and endpoints
+        run: python test_planner.py
+
+      - name: Check designed scenarios
+        run: python scenarios.py
+
+      - name: Check generated maps
+        run: python test_maps.py
+
+      - name: Check BFS against A-star and Dijkstra
+        run: python test_bfs.py
+
       - name: Check search-effort comparisons
         run: python exploration.py
 
