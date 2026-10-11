@@ -1,32 +1,93 @@
 import heapq
+import math
+
+WIDTH = 600
+HEIGHT = 400
 
 
 def find_path(
     start, goal, obstacles, radius, cell_size=20,
     use_heuristic=True,
 ):
-    # Expand obstacles to leave room for the robot's body.
-    expanded = [
-        (
+    def valid_point(point):
+        return (
+            isinstance(point, (tuple, list))
+            and len(point) == 2
+            and all(type(value) is int for value in point)
+        )
+
+    if not valid_point(start) or not valid_point(goal):
+        raise ValueError("Start and goal must contain two integers.")
+
+    start = tuple(start)
+    goal = tuple(goal)
+
+    if type(cell_size) is not int or cell_size <= 0:
+        raise ValueError("Cell size must be a positive integer.")
+
+    if (
+        type(radius) not in (int, float)
+        or not math.isfinite(radius)
+        or radius <= 0
+    ):
+        raise ValueError("Robot radius must be a positive finite number.")
+
+    if (
+        (goal[0] - start[0]) % cell_size != 0
+        or (goal[1] - start[1]) % cell_size != 0
+    ):
+        raise ValueError("Start and goal must align on the same grid.")
+
+    expanded = []
+
+    for obstacle in obstacles:
+        if (
+            not isinstance(obstacle, (tuple, list))
+            or len(obstacle) != 4
+            or not all(type(value) is int for value in obstacle)
+        ):
+            raise ValueError("Each obstacle must contain four integers.")
+
+        left, top, right, bottom = obstacle
+
+        if not (
+            0 <= left < right <= WIDTH
+            and 0 <= top < bottom <= HEIGHT
+        ):
+            raise ValueError("Obstacle dimensions or bounds are invalid.")
+
+        expanded.append((
             left - radius,
             top - radius,
             right + radius,
             bottom + radius,
-        )
-        for left, top, right, bottom in obstacles
-    ]
+        ))
 
-    def step_is_clear(a, b):
-        x, y = b
+    def point_is_clear(point):
+        x, y = point
 
-        # Keep the robot's body inside the map.
         if not (
-            radius <= x <= 600 - radius
-            and radius <= y <= 400 - radius
+            radius <= x <= WIDTH - radius
+            and radius <= y <= HEIGHT - radius
         ):
             return False
 
-        # Check the entire horizontal or vertical step.
+        for left, top, right, bottom in expanded:
+            if left <= x <= right and top <= y <= bottom:
+                return False
+
+        return True
+
+    # A blocked start or goal means no usable route.
+    if not point_is_clear(start) or not point_is_clear(goal):
+        return []
+
+    def step_is_clear(a, b):
+        if not point_is_clear(b):
+            return False
+
+        x, y = b
+
         for left, top, right, bottom in expanded:
             if a[1] == b[1]:
                 if (
@@ -46,7 +107,6 @@ def find_path(
         return True
 
     def heuristic(point):
-        # A zero estimate makes this search run Dijkstra.
         if not use_heuristic:
             return 0
 
@@ -59,7 +119,6 @@ def find_path(
     while frontier:
         _, cost, current = heapq.heappop(frontier)
 
-        # Ignore an entry if a cheaper route was found later.
         if cost != costs[current]:
             continue
 
@@ -73,7 +132,6 @@ def find_path(
             return path[::-1]
 
         x, y = current
-
         neighbours = [
             (x + cell_size, y),
             (x - cell_size, y),
@@ -91,11 +149,9 @@ def find_path(
                 costs[neighbour] = new_cost
                 previous[neighbour] = current
 
-                priority = new_cost + heuristic(neighbour)
-
                 heapq.heappush(
                     frontier,
-                    (priority, new_cost, neighbour),
+                    (new_cost + heuristic(neighbour), new_cost, neighbour),
                 )
 
     return []
