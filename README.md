@@ -1,192 +1,216 @@
 # RoboBench
 
-A Python prototype for comparing A-star and Dijkstra path planning
-on reproducible two-dimensional obstacle maps.
+A reproducible Python prototype for comparing A-star, Dijkstra,
+and Breadth-First Search (BFS) on two-dimensional obstacle maps.
 
-The project includes an animated simulation, a map viewer,
-automated correctness checks, repeated timing measurements,
-and measurements of search effort.
+Includes an animated simulation, a map viewer, correctness checks,
+timing experiments, and measurements of search effort.
 
 ## Requirements
 
 - Python 3.10 or newer
-- Tkinter for the simulation and viewer
+- Tkinter for the visual tools
 - Git for version control
 
 Only Python's standard library is used. No pip packages are required.
 
-## Setup on Windows
+Automated checks run on GitHub with Python 3.10, 3.12, and 3.14.
 
-Open a terminal inside the RoboBench folder:
+## Windows setup
+
+Open a terminal inside the project folder:
 
 ```powershell
 python -m venv .venv
 ```
 
-Run commands using the environment's Python directly:
+In VS Code, use **Python: Select Interpreter** to select:
+
+```text
+.venv\Scripts\python.exe
+```
+
+The commands below run that environment directly.
+
+## Correctness checks
+
+### Input and endpoint handling
 
 ```powershell
 .\.venv\Scripts\python.exe test_planner.py
 ```
 
-In VS Code, select `.venv\Scripts\python.exe` using
-**Python: Select Interpreter**.
+Expected: 18 checks pass.
 
-## Run the checks and experiments
-
-### Input and endpoint checks
+### Robot clearance, detours, and grid resolution
 
 ```powershell
-.\.venv\Scripts\python.exe test_planner.py
+.\.venv\Scripts\python.exe scenarios.py
 ```
 
-Expected: all 18 checks pass.
+Expected: 12/12 checks pass.
 
-### Repeated timing benchmark
+### Generated maps
+
+```powershell
+.\.venv\Scripts\python.exe test_maps.py
+```
+
+Expected: 100/100 map checks pass.
+
+### Independent BFS comparisons
+
+```powershell
+.\.venv\Scripts\python.exe test_bfs.py
+```
+
+Compares BFS with A-star and Dijkstra on 100 generated maps and
+six designed scenarios. Also checks identical start/goal positions.
+
+Expected: all BFS checks pass.
+
+## Experiments
+
+### Three fixed maps
 
 ```powershell
 .\.venv\Scripts\python.exe benchmark.py
 ```
 
-Tests three fixed maps with 100 recorded runs per algorithm per map,
-after five warm-up runs. Algorithm order is shuffled with a fixed seed.
+Runs 100 recorded trials per algorithm per map, after warm-up.
 
-Expected: 600/600 checks pass.
+Expected: 900/900 checks pass.
 
 Outputs:
 
 - `results/trials.csv`
 - `results/summary.csv`
 
-### Generated-map checks
-
-```powershell
-.\.venv\Scripts\python.exe test_maps.py
-```
-
-Tests 100 maps generated using seeds 0–99. Checks returned route
-geometry and compares algorithm reachability and path distance.
-
-Expected: 100/100 map checks pass.
-
-Output: `results/generated_maps.csv`
-
-### Search-effort comparison
+### Search effort across generated maps
 
 ```powershell
 .\.venv\Scripts\python.exe exploration.py
 ```
 
-Measures nodes expanded on the same 100 generated maps.
-
-Expected: all 100 map comparisons pass.
+Expected: 100 three-algorithm map comparisons pass.
 
 Output: `results/exploration.csv`
 
-### Designed scenarios
+### Timing across generated maps
 
 ```powershell
-.\.venv\Scripts\python.exe scenarios.py
+.\.venv\Scripts\python.exe benchmark_maps.py
 ```
 
-Tests narrow passages, robot size, a detour, and an opening that
-a coarse grid misses.
+Runs 20 recorded trials per algorithm on each of 100 maps,
+after warm-up. Algorithm order is shuffled with a fixed seed.
 
-Expected: 12/12 scenario checks pass.
+Expected: 6000/6000 checks pass.
+
+Outputs:
+
+- `results/map_trials.csv`
+- `results/map_summary.csv`
+
+### Paired timing analysis
+
+Run this after `benchmark_maps.py`:
+
+```powershell
+.\.venv\Scripts\python.exe compare_results.py
+```
+
+Compares median timings for algorithms on the same map.
+
+Output: `results/paired_comparison.csv`
 
 ## Visual tools
-
-### Animated simulation
 
 ```powershell
 .\.venv\Scripts\python.exe main.py
 ```
 
-Animates the robot following a route on the map defined in `main.py`.
-A blocked map produces no movement.
-
-### Generated-map viewer
+Animates a robot following A-star's route on the map defined in
+`main.py`. If no route exists, the robot remains still.
 
 ```powershell
 .\.venv\Scripts\python.exe view_map.py
 ```
 
-Select a seed from 0–99, switch algorithms, or find a blocked map.
-This viewer displays planned routes without animating movement.
+Displays generated maps for seeds 0–99 and routes from A-star
+or Dijkstra. The viewer does not animate movement.
 
 ## Planning model
 
-- Map dimensions: 600 × 400 pixels.
-- Robot: circular body with a configurable radius.
+- Map size: 600 × 400 pixels.
+- Robot: circular body with configurable radius.
 - Movement: horizontal and vertical grid steps.
-- Step cost: distance in pixels.
-- A-star heuristic: Manhattan distance.
-- Dijkstra: the same search engine with a zero heuristic.
+- All steps within an experiment have equal cost.
+- A-star uses Manhattan distance.
+- Dijkstra uses the same priority-queue search with a zero heuristic.
+- BFS uses a separately implemented first-in, first-out queue.
 - Obstacles and map boundaries are known before planning.
 - Touching an obstacle counts as a collision.
 
-The planner expands each obstacle into a rectangular safety margin.
-This is conservative near corners and may exclude some routes that
-a circular robot could physically follow.
+Each planner uses rectangular obstacle safety margins. This is
+conservative near corners and can exclude some physically valid
+routes for a circular robot.
 
 Start and goal must align on the same grid. Blocked endpoints return
 no route; malformed inputs raise `ValueError`.
 
 ## Measurements
 
-**Planning time:** time spent calling the planner, including its input
-checks and route reconstruction. Animation and file writing are excluded.
+**Planning time:** planner execution, including input checks and route
+reconstruction. Validation, animation, and CSV writing are excluded.
 
-**Planned distance:** sum of route-segment lengths. No-route cases have
-no reported distance.
+**Planned distance:** sum of route-segment lengths in pixels.
+No-route cases have no reported distance.
 
-**Nodes expanded:** positions where the search examines neighbours.
+**Nodes expanded:** positions where neighbours are examined.
 The final goal and outdated priority-queue entries are excluded.
 
-Timing depends on hardware and system load. Search counts also depend
-on grid resolution, map geometry, and tie-breaking.
+The generated-map timing summary averages one median timing per map.
+The paired analysis compares algorithms within each map.
 
-## Initial observations
+## Initial findings
 
-On the initial 100 generated maps:
+In the initial generated-map experiment:
 
-- Both algorithms found routes on 95 maps.
-- Both reported no route on five maps.
-- Mean expanded nodes on reachable maps were 124.4 for A-star
-  and 372.0 for Dijkstra.
+- All three algorithms found routes on 95 maps and no route on five.
+- On reachable maps, mean expanded nodes were 124.4 for A-star,
+  372.0 for Dijkstra, and 366.6 for BFS.
+- A-star had a lower median time than BFS on 48 reachable maps;
+  BFS had a lower median on 47.
+- BFS had the lower average of map median times in that run.
 
-In the designed offset-passage scenario:
+A-star explored fewer nodes, but runtime depended on map geometry
+and implementation overhead. These results do not establish a
+universal runtime winner.
 
-- A 20-pixel grid missed the opening.
-- A 10-pixel grid found a 500-pixel route.
-- A-star expanded 112 nodes; Dijkstra expanded 1,401.
+In a designed offset passage, a 20-pixel grid missed an opening that
+a 10-pixel grid represented successfully.
 
-These observations apply to this implementation and these maps.
-Regenerate results locally using the commands above.
+Re-run experiments locally; timings vary with hardware and system load.
 
 ## Limitations
 
 - This is a static path-planning prototype, not a physical robot benchmark.
 - There is no sensor noise, motion uncertainty, or dynamic obstacle model.
-- Both algorithms share search code, so agreement alone cannot establish
-  correctness. Separate geometric checks provide additional validation.
-- No-route cases may include blocked endpoints or openings missed by
-  the grid; they are not all physically disconnected environments.
-- Repeated timings on one map are not independent navigation tasks.
+- Algorithms share the same planning assumptions; agreement cannot
+  rule out every modelling error.
+- Separate geometric checks validate returned route clearance.
+- No-route cases can include blocked endpoints or grid-resolution effects,
+  rather than physically disconnected environments.
+- Repeated trials measure timing variation, not independent map diversity.
+- Strict timing rankings are descriptive, not statistical significance tests.
 - Pixels are simulation units, not calibrated physical distances.
 
-## Project files
+## Results and version control
 
-| File | Purpose |
-|---|---|
-| `planner.py` | A-star and Dijkstra search |
-| `main.py` | Animated simulation |
-| `benchmark.py` | Repeated timing measurements |
-| `test_planner.py` | Input and endpoint checks |
-| `test_maps.py` | Generated maps and geometric checks |
-| `exploration.py` | Search-effort measurements |
-| `scenarios.py` | Designed passage and resolution tests |
-| `view_map.py` | Interactive map inspection |
+Experiments overwrite their corresponding CSV files when rerun.
+Generated files in `results/` are excluded from Git.
 
-Generated CSV files are overwritten when experiments are rerun.
-The `results` folder is excluded from Git; regenerate it locally.
+GitHub Actions runs the core correctness checks, search-effort
+comparison, and fixed-map benchmark. The larger timing experiment
+and paired analysis are run locally.
