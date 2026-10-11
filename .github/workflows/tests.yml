@@ -47,3 +47,6 @@ jobs:
 
       - name: Check coarse-to-fine planning
         run: python test_adaptive.py
+
+      - name: Check motion and swept collisions
+        run: python test_motion.py
