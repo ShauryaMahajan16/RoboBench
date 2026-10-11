@@ -7,8 +7,15 @@ HEIGHT = 400
 
 def find_path(
     start, goal, obstacles, radius, cell_size=20,
-    use_heuristic=True,
+    use_heuristic=True, stats=None,
 ):
+    # Existing callers can still request just the path.
+    if stats is None:
+        stats = {}
+
+    stats.clear()
+    stats["nodes_expanded"] = 0
+
     def valid_point(point):
         return (
             isinstance(point, (tuple, list))
@@ -78,7 +85,6 @@ def find_path(
 
         return True
 
-    # A blocked start or goal means no usable route.
     if not point_is_clear(start) or not point_is_clear(goal):
         return []
 
@@ -130,6 +136,10 @@ def find_path(
                 path.append(current)
 
             return path[::-1]
+
+        # Count only positions whose neighbours are examined.
+        # The final goal and outdated heap entries are excluded.
+        stats["nodes_expanded"] += 1
 
         x, y = current
         neighbours = [
