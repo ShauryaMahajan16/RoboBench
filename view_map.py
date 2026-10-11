@@ -1,15 +1,15 @@
 import math
+from pathlib import Path
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 
 from bfs import find_path_bfs
 from planner import find_path
 from test_maps import generate_obstacles
+from map_io import (
+    WIDTH, HEIGHT, RADIUS, CELL_SIZE, save_map, load_map,
+)
 
-WIDTH = 600
-HEIGHT = 400
-RADIUS = 12
-CELL_SIZE = 20
 SPEED = 3
 DEFAULT_START = (60, 200)
 DEFAULT_GOAL = (540, 200)
@@ -25,7 +25,6 @@ class RoboBenchApp:
         self.custom_obstacles = []
         self.custom_start = DEFAULT_START
         self.custom_goal = DEFAULT_GOAL
-        self.robot = None
         self.nodes = 0
 
         controls = ttk.Frame(window, padding=10)
@@ -37,11 +36,8 @@ class RoboBenchApp:
             controls,
             textvariable=self.map_name,
             values=[
-                "Clear map",
-                "Two obstacles",
-                "Blocking wall",
-                "Generated map",
-                "Custom map",
+                "Clear map", "Two obstacles", "Blocking wall",
+                "Generated map", "Custom map",
             ],
             state="readonly",
             width=16,
@@ -85,16 +81,24 @@ class RoboBenchApp:
             width=10,
         ).pack(side="left", padx=5)
 
+        for label, command in [
+            ("Run", self.run),
+            ("Reset robot", self.show_map),
+            ("Clear custom map", self.clear_custom),
+        ]:
+            ttk.Button(
+                editor, text=label, command=command
+            ).pack(side="left", padx=5)
+
+        files = ttk.Frame(window, padding=(10, 0, 10, 10))
+        files.pack(fill="x")
+
         ttk.Button(
-            editor, text="Run", command=self.run
+            files, text="Save Map", command=self.save_custom
         ).pack(side="left", padx=5)
 
         ttk.Button(
-            editor, text="Reset robot", command=self.show_map
-        ).pack(side="left", padx=5)
-
-        ttk.Button(
-            editor, text="Clear custom map", command=self.clear_custom
+            files, text="Load Map", command=self.load_custom
         ).pack(side="left", padx=5)
 
         self.canvas = tk.Canvas(
@@ -105,10 +109,8 @@ class RoboBenchApp:
 
         self.status = tk.StringVar()
         ttk.Label(
-            window,
-            textvariable=self.status,
-            padding=10,
-            wraplength=600,
+            window, textvariable=self.status,
+            padding=10, wraplength=600,
         ).pack()
 
         window.protocol("WM_DELETE_WINDOW", self.close)
@@ -119,10 +121,10 @@ class RoboBenchApp:
             self.window.after_cancel(self.pending)
             self.pending = None
 
-    def load_map(self):
-        name = self.map_name.get()
+    def load_selected_map(self):
         self.start = DEFAULT_START
         self.goal = DEFAULT_GOAL
+        name = self.map_name.get()
 
         if name == "Custom map":
             self.start = self.custom_start
@@ -160,7 +162,7 @@ class RoboBenchApp:
         self.path = []
 
         try:
-            self.obstacles = self.load_map()
+            self.obstacles = self.load_selected_map()
         except ValueError:
             self.status.set("Enter a whole-number seed from 0 to 99.")
             return False
@@ -171,14 +173,10 @@ class RoboBenchApp:
         self.canvas.delete("all")
 
         for x in range(0, WIDTH + 1, CELL_SIZE):
-            self.canvas.create_line(
-                x, 0, x, HEIGHT, fill="#eeeeee"
-            )
+            self.canvas.create_line(x, 0, x, HEIGHT, fill="#eeeeee")
 
         for y in range(0, HEIGHT + 1, CELL_SIZE):
-            self.canvas.create_line(
-                0, y, WIDTH, y, fill="#eeeeee"
-            )
+            self.canvas.create_line(0, y, WIDTH, y, fill="#eeeeee")
 
         for obstacle in self.obstacles:
             self.canvas.create_rectangle(*obstacle, fill="grey")
@@ -187,13 +185,12 @@ class RoboBenchApp:
         self.canvas.create_text(
             self.goal[0], self.goal[1] - 25, text="Goal"
         )
-
         self.robot = self.circle(self.start, RADIUS, "blue")
 
         if self.map_name.get() == "Custom map":
             self.status.set(
-                "Choose a click tool and edit the map. "
-                "Start and goal snap to grid points. Press Run."
+                "Choose a click tool to edit. Press Run to navigate. "
+                "Use Save Map to keep this layout."
             )
         else:
             self.status.set("Ready. Press Run to plan and move.")
@@ -217,14 +214,12 @@ class RoboBenchApp:
             obstacle = (
                 left, top, left + CELL_SIZE, top + CELL_SIZE
             )
-
             if obstacle not in self.custom_obstacles:
                 self.custom_obstacles.append(obstacle)
 
         elif tool == "Erase":
             self.custom_obstacles = [
-                obstacle
-                for obstacle in self.custom_obstacles
+                obstacle for obstacle in self.custom_obstacles
                 if not (
                     obstacle[0] <= x < obstacle[2]
                     and obstacle[1] <= y < obstacle[3]
@@ -232,16 +227,12 @@ class RoboBenchApp:
             ]
 
         else:
-            # Snap endpoints to the same grid and keep the
-            # robot's body away from the map boundary.
             grid_x = ((x + CELL_SIZE // 2) // CELL_SIZE) * CELL_SIZE
             grid_y = ((y + CELL_SIZE // 2) // CELL_SIZE) * CELL_SIZE
-
             point = (
                 max(CELL_SIZE, min(WIDTH - CELL_SIZE, grid_x)),
                 max(CELL_SIZE, min(HEIGHT - CELL_SIZE, grid_y)),
             )
-
             if tool == "Start":
                 self.custom_start = point
             elif tool == "Goal":
@@ -255,6 +246,68 @@ class RoboBenchApp:
         self.custom_goal = DEFAULT_GOAL
         self.map_name.set("Custom map")
         self.show_map()
+
+    def maps_folder(self):
+        folder = Path(__file__).resolve().parent / "maps"
+        folder.mkdir(exist_ok=True)
+        return folder
+
+    def save_custom(self):
+        if self.map_name.get() != "Custom map":
+            messagebox.showinfo(
+                "Save Map", "Select Custom map to save your layout."
+            )
+            return
+
+        self.stop_animation()
+
+        try:
+            filename = filedialog.asksaveasfilename(
+                parent=self.window,
+                title="Save custom map",
+                initialdir=str(self.maps_folder()),
+                defaultextension=".json",
+                filetypes=[("Map files", "*.json")],
+            )
+            if not filename:
+                self.status.set("Save cancelled. Press Run to restart.")
+                return
+
+            save_map(
+                filename, self.custom_start, self.custom_goal,
+                self.custom_obstacles,
+            )
+            self.status.set(f"Map saved: {Path(filename).name}")
+        except (OSError, ValueError) as error:
+            messagebox.showerror("Could not save map", str(error))
+
+    def load_custom(self):
+        self.stop_animation()
+
+        try:
+            filename = filedialog.askopenfilename(
+                parent=self.window,
+                title="Load custom map",
+                initialdir=str(self.maps_folder()),
+                filetypes=[("Map files", "*.json")],
+            )
+            if not filename:
+                self.status.set("Load cancelled. Press Run to restart.")
+                return
+
+            start, goal, obstacles = load_map(filename)
+        except (OSError, ValueError) as error:
+            messagebox.showerror("Could not load map", str(error))
+            return
+
+        self.custom_start = start
+        self.custom_goal = goal
+        self.custom_obstacles = obstacles
+        self.map_name.set("Custom map")
+        self.show_map()
+        self.status.set(
+            f"Loaded: {Path(filename).name}. Press Run."
+        )
 
     def run(self):
         if not self.show_map():
@@ -304,7 +357,6 @@ class RoboBenchApp:
         for left, top, right, bottom in self.obstacles:
             gap_x = max(left - max_x, min_x - right, 0)
             gap_y = max(top - max_y, min_y - bottom, 0)
-
             if math.hypot(gap_x, gap_y) <= RADIUS:
                 return True
 
