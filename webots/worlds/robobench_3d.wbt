@@ -19,13 +19,9 @@ TexturedBackgroundLight {
 RectangleArena {
 }
 E-puck {
-  hidden position_0_0 189.84235173191294
-  hidden position_0_1 188.13261332520574
-  hidden rotation_1 0 1 0 1.3467925165253474
-  hidden rotation_2 0 -0.9999999999999999 0 0.3629458901818551
   translation -0.25 0 0
   rotation 2.8715368157113275e-06 -0.9999999999827741 -5.11920003322077e-06 0.0004920899673897471
-  controller "robobench_controller"
+  controller "robobench_compare_3d"
   supervisor TRUE
 }
 DEF ROBOBENCH_OBSTACLE WoodenBox {
