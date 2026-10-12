@@ -1,4 +1,5 @@
 import csv
+import json
 import math
 import sys
 import time
@@ -31,6 +32,7 @@ sys.path.insert(0, str(project_folder))
 
 from planner import find_path
 from bfs import find_path_bfs
+from world_geometry import box_to_grid_rectangle
 
 START = (-0.25, 0.0)
 GOAL = (0.25, 0.0)
@@ -59,14 +61,14 @@ box_node.enableContactPointsTracking(timestep, False)
 root_children = robot.getRoot().getField("children")
 
 
-def stop_wheels():
+def stop():
     left_motor.setVelocity(0.0)
     right_motor.setVelocity(0.0)
 
 
 def step():
     if robot.step(timestep) == -1:
-        stop_wheels()
+        stop()
         raise SystemExit
 
 
@@ -109,40 +111,28 @@ def simplify_path(path):
     return simplified
 
 
-def check_box_layout():
-    position = box_node.getField("translation").getSFVec3f()
-    size = box_node.getField("size").getSFVec3f()
-    rotation = box_node.getField("rotation").getSFRotation()
+def read_box():
+    position = list(box_node.getPosition())
+    size = list(box_node.getField("size").getSFVec3f())
+    orientation = list(box_node.getOrientation())
 
-    if (
-        any(abs(a - b) > 0.00001 for a, b in zip(
-            position, [0.0, 0.0, 0.1]
-        ))
-        or any(abs(a - b) > 0.00001 for a, b in zip(
-            size, [0.2, 0.2, 0.2]
-        ))
-        or abs(rotation[3]) > 0.00001
-    ):
-        raise RuntimeError(
-            "Use an unrotated box at 0 0 0.1 "
-            "with size 0.2 0.2 0.2."
-        )
+    rectangle = box_to_grid_rectangle(position, size, orientation)
+
+    return position, size, orientation, rectangle
 
 
 def reset_robot():
-    stop_wheels()
+    stop()
     robot_node.getField("translation").setSFVec3f(
         [START[0], START[1], 0.0]
     )
-    robot_node.getField("rotation").setSFRotation(
-        [0.0, 0.0, 1.0, 0.0]
-    )
+    robot_node.getField("rotation").setSFRotation([0, 0, 1, 0])
     robot_node.resetPhysics()
 
-    settle_start = robot.getTime()
+    started = robot.getTime()
 
-    while robot.getTime() - settle_start < 0.5:
-        stop_wheels()
+    while robot.getTime() - started < 0.5:
+        stop()
         step()
 
     position = robot_node.getPosition()
@@ -154,7 +144,9 @@ def reset_robot():
         > 0.01
         or abs(heading) > 0.1
     ):
-        raise RuntimeError("Robot reset failed.")
+        raise RuntimeError(
+            "Robot reset failed. Check that the start is unobstructed."
+        )
 
 
 def touching_box():
@@ -191,6 +183,9 @@ def draw_route(route):
         """,
     )
 
+    if not route:
+        return
+
     coordinates = " ".join(
         f"{x:.6f} {y:.6f} 0.004" for x, y in route
     )
@@ -208,8 +203,8 @@ def draw_route(route):
 
 
 def execute_route(route):
-    start_time = robot.getTime()
-    previous_time = start_time
+    started = robot.getTime()
+    previous_time = started
     previous_position = robot_node.getPosition()[:2]
 
     travelled = 0.0
@@ -217,23 +212,20 @@ def execute_route(route):
     obstacle_count = 0
     last_print = -1.0
 
-    # Record the command applied during each simulation interval.
     previous_command = "IDLE"
     command_times = {"TURNING": 0.0, "MOVING": 0.0, "IDLE": 0.0}
     turn_episodes = 0
 
     while True:
         step()
-
         now = robot.getTime()
-        interval = now - previous_time
-        previous_time = now
-        command_times[previous_command] += interval
 
-        elapsed = now - start_time
+        command_times[previous_command] += now - previous_time
+        previous_time = now
+        elapsed = now - started
+
         position = robot_node.getPosition()
         current = (position[0], position[1])
-
         travelled += math.dist(current, previous_position)
         previous_position = current
 
@@ -257,16 +249,17 @@ def execute_route(route):
 
         if outcome is None:
             front = max(sensor.getValue() for sensor in front_sensors)
-            obstacle_count = obstacle_count + 1 if front >= 120.0 else 0
+            obstacle_count = obstacle_count + 1 if front >= 120 else 0
 
             if obstacle_count >= 2:
                 outcome = "OBSTACLE STOP"
 
         if outcome is not None:
-            stop_wheels()
+            stop()
 
-            measured_total = sum(command_times.values())
-            if not math.isclose(measured_total, elapsed, abs_tol=0.000001):
+            if not math.isclose(
+                sum(command_times.values()), elapsed, abs_tol=0.000001
+            ):
                 raise RuntimeError("Command-time accounting mismatch.")
 
             return {
@@ -302,10 +295,9 @@ def execute_route(route):
 
         if abs(error) > 0.15:
             command = "TURNING"
-            left_speed = -turn
-            right_speed = turn
+            left_speed, right_speed = -turn, turn
 
-            if previous_command != "TURNING":
+            if previous_command != command:
                 turn_episodes += 1
         else:
             command = "MOVING"
@@ -324,7 +316,7 @@ def execute_route(route):
         right_motor.setVelocity(right_speed)
         previous_command = command
 
-        if now - last_print >= 3.0:
+        if now - last_print >= 5.0:
             print(
                 f"{command} | Waypoint {waypoint}/{len(route) - 1} | "
                 f"x={current[0]:.3f}, y={current[1]:.3f}"
@@ -335,9 +327,8 @@ def execute_route(route):
 def append_result(row):
     folder = project_folder / "results"
     folder.mkdir(exist_ok=True)
+    filename = folder / "webots_geometry_comparison.csv"
 
-    # Separate file because these rows have additional columns.
-    filename = folder / "webots_execution_breakdown.csv"
     needs_header = (
         not filename.exists() or filename.stat().st_size == 0
     )
@@ -351,58 +342,81 @@ def append_result(row):
     return filename
 
 
-stop_wheels()
-check_box_layout()
+stop()
+
+# This experiment assumes the box remains static.
+if box_node.getField("mass").getSFFloat() > 0:
+    raise RuntimeError("Set WoodenBox mass to 0 for this static-map test.")
+
 results = []
 
 for algorithm in ALGORITHMS:
     print(f"\n--- Starting {algorithm} trial ---")
-    reset_robot()
+
+    box_position, box_size, box_orientation, rectangle = read_box()
+    print(f"Box footprint in planner pixels: {rectangle}")
 
     stats = {}
-    planning_start = time.perf_counter_ns()
+    planning_started = time.perf_counter_ns()
 
     if algorithm == "BFS":
         path = find_path_bfs(
             to_pixels(START), to_pixels(GOAL),
-            [(200, 100, 400, 300)],
-            PLANNING_RADIUS, GRID_SIZE,
+            [rectangle], PLANNING_RADIUS, GRID_SIZE,
             stats=stats,
         )
     else:
         path = find_path(
             to_pixels(START), to_pixels(GOAL),
-            [(200, 100, 400, 300)],
-            PLANNING_RADIUS, GRID_SIZE,
+            [rectangle], PLANNING_RADIUS, GRID_SIZE,
             use_heuristic=(algorithm == "A-star"),
             stats=stats,
         )
 
     planning_ms = (
-        time.perf_counter_ns() - planning_start
+        time.perf_counter_ns() - planning_started
     ) / 1_000_000
 
-    if not path:
-        raise RuntimeError(f"{algorithm} found no route.")
-
-    planned_distance = sum(
-        math.dist(a, b) for a, b in zip(path, path[1:])
-    ) * METRES_PER_PIXEL
-
     route = [to_metres(point) for point in simplify_path(path)]
-    draw_route(route)
-    step()
+    planned_distance = (
+        sum(math.dist(a, b) for a, b in zip(path, path[1:]))
+        * METRES_PER_PIXEL
+        if path else None
+    )
 
-    result = execute_route(route)
+    draw_route(route)
+
+    if path:
+        reset_robot()
+        result = execute_route(route)
+    else:
+        stop()
+        result = {
+            "outcome": "NO ROUTE",
+            "box_collision_detected": False,
+            "travelled_distance_m": 0.0,
+            "simulation_time_s": 0.0,
+            "turn_command_time_s": 0.0,
+            "move_command_time_s": 0.0,
+            "idle_command_time_s": 0.0,
+            "turn_episodes": 0,
+            "goal_error_m": "",
+        }
 
     row = {
         "run_id": RUN_ID,
         "algorithm": algorithm,
+        "box_position_json": json.dumps(box_position),
+        "box_size_json": json.dumps(box_size),
+        "box_orientation_json": json.dumps(box_orientation),
+        "grid_rectangle_json": json.dumps(rectangle),
+        "waypoints_json": json.dumps(route),
         "planning_time_ms": planning_ms,
         "nodes_expanded": stats["nodes_expanded"],
-        "planned_distance_m": planned_distance,
-        "route_segments": len(route) - 1,
-        "route_corners": max(0, len(route) - 2),
+        "planned_distance_m": (
+            planned_distance if planned_distance is not None else ""
+        ),
+        "route_segments": max(0, len(route) - 1),
         **result,
         "grid_size_px": GRID_SIZE,
         "planning_radius_px": PLANNING_RADIUS,
@@ -412,28 +426,26 @@ for algorithm in ALGORITHMS:
     filename = append_result(row)
     results.append(row)
 
-    print(
-        f"RESULT: {algorithm} | {result['outcome']} | "
-        f"Total: {result['simulation_time_s']:.2f} s | "
-        f"Turning: {result['turn_command_time_s']:.2f} s | "
-        f"Moving: {result['move_command_time_s']:.2f} s"
-    )
+    print(f"RESULT: {algorithm} | {result['outcome']}")
 
-print("\n--- EXECUTION BREAKDOWN COMPLETE ---")
+print("\n--- WORLD-GEOMETRY COMPARISON COMPLETE ---")
 
 for row in results:
+    planned_text = (
+        f"{row['planned_distance_m']:.3f} m"
+        if row["planned_distance_m"] != "" else "N/A"
+    )
+
     print(
         f"{row['algorithm']:8} | {row['outcome']} | "
-        f"Segments: {row['route_segments']} | "
-        f"Turn episodes: {row['turn_episodes']} | "
-        f"Turning: {row['turn_command_time_s']:.2f} s | "
-        f"Moving: {row['move_command_time_s']:.2f} s | "
+        f"Planned: {planned_text} | "
+        f"Travelled: {row['travelled_distance_m']:.3f} m | "
         f"Total: {row['simulation_time_s']:.2f} s | "
         f"Collision: {row['box_collision_detected']}"
     )
 
 print(f"Results appended to: {filename}")
-stop_wheels()
+stop()
 
 while robot.step(timestep) != -1:
     pass
