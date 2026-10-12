@@ -1,7 +1,12 @@
-from controller import Robot
+import math
+from controller import Supervisor
 
-robot = Robot()
+robot = Supervisor()
 timestep = int(robot.getBasicTimeStep())
+robot_node = robot.getSelf()
+
+if robot_node is None:
+    raise RuntimeError("Set E-puck's supervisor field to TRUE.")
 
 left_motor = robot.getDevice("left wheel motor")
 right_motor = robot.getDevice("right wheel motor")
@@ -11,111 +16,215 @@ right_motor.setPosition(float("inf"))
 left_motor.setVelocity(0.0)
 right_motor.setVelocity(0.0)
 
-sensors = []
+front_sensors = []
 
-for index in range(8):
-    sensor = robot.getDevice(f"ps{index}")
+for name in ["ps0", "ps1", "ps6", "ps7"]:
+    sensor = robot.getDevice(name)
     sensor.enable(timestep)
-    sensors.append(sensor)
+    front_sensors.append(sensor)
 
-FORWARD_SPEED = 1.0
-TURN_SPEED = 1.0
+# Positions in metres. The first point is the expected start.
+ROUTE = [
+    (-0.25, 0.00),
+    (-0.25, 0.20),
+    (0.25, 0.20),
+    (0.25, 0.00),
+]
 
-DETECT_THRESHOLD = 120.0
-CLEAR_THRESHOLD = 90.0
+WAYPOINT_TOLERANCE = 0.012
+FORWARD_SPEED = 1.5
+MAX_WHEEL_SPEED = 2.0
+TURN_GAIN = 1.5
+MAX_TEST_SECONDS = 120.0
 
-MIN_TURN_SECONDS = 2.0
-MAX_TURN_SECONDS = 5.0
-MAX_TEST_SECONDS = 20.0
+root_children = robot.getRoot().getField("children")
 
-state = "FORWARD"
+# Create or reposition the visual goal.
+marker = robot.getFromDef("ROBOBENCH_GOAL")
+
+if marker is None:
+    root_children.importMFNodeFromString(
+        -1,
+        """
+        DEF ROBOBENCH_GOAL Pose {
+          translation 0.25 0 0.015
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0 1 0
+                roughness 1
+                metalness 0
+                emissiveColor 0 0.3 0
+              }
+              geometry Sphere { radius 0.015 }
+            }
+          ]
+        }
+        """,
+    )
+
+    if robot.step(timestep) == -1:
+        raise SystemExit
+
+    marker = robot.getFromDef("ROBOBENCH_GOAL")
+
+if marker is None:
+    raise RuntimeError("Could not create the goal marker.")
+
+marker.getField("translation").setSFVec3f([0.25, 0.0, 0.015])
+
+# Draw the intended route as an orange line.
+old_route = robot.getFromDef("ROBOBENCH_ROUTE")
+if old_route is not None:
+    old_route.remove()
+
+root_children.importMFNodeFromString(
+    -1,
+    """
+    DEF ROBOBENCH_ROUTE Shape {
+      appearance Appearance {
+        material Material {
+          diffuseColor 1 0.5 0
+          emissiveColor 1 0.5 0
+        }
+      }
+      geometry IndexedLineSet {
+        coord Coordinate {
+          point [
+            -0.25 0    0.004
+            -0.25 0.20 0.004
+             0.25 0.20 0.004
+             0.25 0    0.004
+          ]
+        }
+        coordIndex [0 1 2 3 -1]
+      }
+    }
+    """,
+)
+
 start_time = robot.getTime()
-turn_start = 0.0
-turn_direction = "LEFT"
-
-detection_count = 0
-clear_count = 0
 last_print = -1.0
+waypoint_index = 1
+obstacle_count = 0
+finished = False
+start_checked = False
+state = "STARTING"
 
-print("Obstacle avoidance test started.")
+previous_position = None
+travelled_distance = 0.0
+
+print("Waypoint navigation started.")
 
 while robot.step(timestep) != -1:
     now = robot.getTime()
     elapsed = now - start_time
-    values = [sensor.getValue() for sensor in sensors]
 
-    # Front and front-diagonal sensors.
-    right_front = max(values[0], values[1])
-    left_front = max(values[6], values[7])
-    front = max(right_front, left_front)
+    position = robot_node.getPosition()
+    current = (position[0], position[1])
+
+    if previous_position is not None:
+        travelled_distance += math.dist(current, previous_position)
+
+    previous_position = current
+
+    orientation = robot_node.getOrientation()
+    heading = math.atan2(orientation[3], orientation[0])
 
     left_speed = 0.0
     right_speed = 0.0
 
-    if elapsed < 0.25:
-        pass
+    if not finished and elapsed >= 0.25:
+        if not start_checked:
+            start_checked = True
 
-    elif elapsed >= MAX_TEST_SECONDS:
-        if state != "STOPPED":
-            print("Test time limit reached. Stopping.")
-        state = "STOPPED"
+            if math.dist(current, ROUTE[0]) > 0.02:
+                finished = True
+                state = "START POSITION ERROR"
+                print("Set the starting translation to -0.25 0 0.")
 
-    elif state == "FORWARD":
-        if front >= DETECT_THRESHOLD:
-            detection_count += 1
-        else:
-            detection_count = 0
+        if not finished:
+            # Advance only after reaching the current waypoint.
+            while (
+                waypoint_index < len(ROUTE)
+                and math.dist(current, ROUTE[waypoint_index])
+                <= WAYPOINT_TOLERANCE
+            ):
+                print(f"Waypoint {waypoint_index} reached.")
+                waypoint_index += 1
 
-        if detection_count >= 2:
-            state = "TURNING"
-            turn_start = now
-            clear_count = 0
+            if waypoint_index >= len(ROUTE):
+                finished = True
+                state = "GOAL REACHED"
+                print(
+                    "SUCCESS: Route completed. "
+                    f"Travelled distance: {travelled_distance:.3f} m"
+                )
 
-            # Turn away from the side with the stronger reading.
-            turn_direction = (
-                "RIGHT" if left_front > right_front else "LEFT"
-            )
+            elif elapsed >= MAX_TEST_SECONDS:
+                finished = True
+                state = "TIMEOUT"
+                print("Time limit reached. Wheels stopped.")
 
-            print(f"Obstacle detected. Turning {turn_direction}.")
-        else:
-            left_speed = FORWARD_SPEED
-            right_speed = FORWARD_SPEED
+            else:
+                front = max(
+                    sensor.getValue() for sensor in front_sensors
+                )
 
-    elif state == "TURNING":
-        turn_elapsed = now - turn_start
+                if front >= 120.0:
+                    obstacle_count += 1
+                else:
+                    obstacle_count = 0
 
-        if front < CLEAR_THRESHOLD:
-            clear_count += 1
-        else:
-            clear_count = 0
+                if obstacle_count >= 2:
+                    finished = True
+                    state = "OBSTACLE STOP"
+                    print("Obstacle detected on route. Wheels stopped.")
 
-        if (
-            turn_elapsed >= MIN_TURN_SECONDS
-            and clear_count >= 3
-        ):
-            state = "FORWARD"
-            detection_count = 0
-            print("Front clear. Resuming forward movement.")
+                else:
+                    target_x, target_y = ROUTE[waypoint_index]
+                    dx = target_x - current[0]
+                    dy = target_y - current[1]
+                    distance = math.hypot(dx, dy)
 
-        elif turn_elapsed >= MAX_TURN_SECONDS:
-            state = "STOPPED"
-            print("Front did not clear in time. Stopping.")
+                    target_heading = math.atan2(dy, dx)
+                    heading_error = math.atan2(
+                        math.sin(target_heading - heading),
+                        math.cos(target_heading - heading),
+                    )
 
-        elif turn_direction == "LEFT":
-            left_speed = -TURN_SPEED
-            right_speed = TURN_SPEED
+                    turn = max(
+                        -MAX_WHEEL_SPEED,
+                        min(MAX_WHEEL_SPEED, TURN_GAIN * heading_error),
+                    )
 
-        else:
-            left_speed = TURN_SPEED
-            right_speed = -TURN_SPEED
+                    if abs(heading_error) > 0.15:
+                        state = "TURNING"
+                        left_speed = -turn
+                        right_speed = turn
+                    else:
+                        state = "FOLLOWING ROUTE"
+                        forward = min(
+                            FORWARD_SPEED, distance * 10.0
+                        )
+
+                        left_speed = max(
+                            -MAX_WHEEL_SPEED,
+                            min(MAX_WHEEL_SPEED, forward - turn),
+                        )
+                        right_speed = max(
+                            -MAX_WHEEL_SPEED,
+                            min(MAX_WHEEL_SPEED, forward + turn),
+                        )
 
     left_motor.setVelocity(left_speed)
     right_motor.setVelocity(right_speed)
 
-    if now - last_print >= 0.5:
+    if now - last_print >= 1.0:
         print(
-            f"State: {state} | "
-            f"Front right: {right_front:.1f} | "
-            f"Front left: {left_front:.1f}"
+            f"{state} | "
+            f"Waypoint: {min(waypoint_index, 3)}/3 | "
+            f"x: {current[0]:.3f} m | "
+            f"y: {current[1]:.3f} m"
         )
         last_print = now
