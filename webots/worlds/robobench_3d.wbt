@@ -9,8 +9,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.3456328904046671 0.3499820342748927 0.8706609447743267 1.6964704725400408
-  position -0.024720819344357818 -0.8499841405656489 0.6634543955833837
+  orientation -0.35340633412516315 0.33143245935772137 0.8747893963030792 1.7034187045767575
+  position -0.03478128576846216 -0.7888928140920096 0.6886970754243931
 }
 TexturedBackground {
 }
@@ -19,14 +19,55 @@ TexturedBackgroundLight {
 RectangleArena {
 }
 E-puck {
-  hidden position_0_0 38.600420574773544
-  hidden position_0_1 44.630643165259265
-  hidden rotation_1 0 1 0 0.9013087316960253
-  hidden rotation_2 0 -1 0 5.634839292177427
+  hidden position_0_0 189.84235173191294
+  hidden position_0_1 188.13261332520574
+  hidden rotation_1 0 1 0 1.3467925165253474
+  hidden rotation_2 0 -0.9999999999999999 0 0.3629458901818551
   translation -0.25 0 0
+  rotation 2.8715368157113275e-06 -0.9999999999827741 -5.11920003322077e-06 0.0004920899673897471
   controller "robobench_controller"
+  supervisor TRUE
 }
-WoodenBox {
+DEF ROBOBENCH_OBSTACLE WoodenBox {
   translation 0 0 0.1
   size 0.2 0.2 0.2
+}
+DEF ROBOBENCH_GOAL Pose {
+  translation 0.25 0 0.015
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0 1 0
+        roughness 1
+        metalness 0
+        emissiveColor 0 0.3 0
+      }
+      geometry Sphere {
+        radius 0.015
+      }
+    }
+  ]
+}
+DEF ROBOBENCH_ROUTE Shape {
+  appearance Appearance {
+    material Material {
+      diffuseColor 1 0.5 0
+      emissiveColor 1 0.5 0
+    }
+  }
+  geometry IndexedLineSet {
+    coord Coordinate {
+      point [
+        -0.25 0 0.004
+        -0.15 0 0.004
+        -0.15 -0.16 0.004
+        0.15 -0.16 0.004
+        0.15 0 0.004
+        0.25 0 0.004
+      ]
+    }
+    coordIndex [
+      0, 1, 2, 3, 4, 5, -1
+    ]
+  }
 }
