@@ -1,72 +1,132 @@
-# RoboBench: Effects of Grid Resolution, Planning Clearance, and Route Selection on Simulated Robot Navigation
+# RoboBench: A Controlled Simulation Study of Grid Resolution, Planning Clearance, and Waypoint Representation
 
 Author: Shaurya Mahajan
 
-Status: Working draft. A broader literature review, additional validation,
-and submission formatting remain to be completed.
+Status: Research-enhanced working draft, 18 October 2026. Results remain
+descriptive. Broader validation and independent technical review are needed
+before submission. Literature comparisons do not constitute new experiments.
 
 ## Abstract
 
-This study evaluates how grid resolution, planning clearance, and route
-representation affect simulated robot navigation. RoboBench compares
-A-star, Dijkstra, and breadth-first search on static rectangular obstacle
-maps. Across 100 generated maps, 10- and 20-pixel grids found routes on
-95 maps, while a 40-pixel grid found routes on 89. A coarse-to-fine retry
-strategy preserved tested fine-grid reachability on 244 passage cases
-but did not reduce average planning time. Under simplified Gaussian
-displacement noise, additional planning clearance reduced collisions
-while making some maps unplannable. An extended Webots study completed
-81 trials across nine box placements, with equal planned distances
-within each placement but different execution durations. A separate
-six-trial control held the planned geometric route fixed: adding
-collinear midpoints increased execution time from 83.616 to 123.232
-simulation seconds, approximately 47.4%. These observations demonstrate
-tradeoffs among planning computation, route availability, and controller
-execution in the tested settings.
+Robot navigation results depend on the search representation, geometric
+clearance, and execution controller. This study examines these dependencies
+through a reproducible Python framework and controlled Webots experiments.
+A-star, Dijkstra, and breadth-first search agreed on route availability
+and grid-path distance in the reported comparisons. On 100 generated maps,
+10- and 20-pixel grids found routes on 95 maps, compared with 89 at
+40 pixels. Resolution retry preserved tested fine-grid reachability on
+244 passage cases but did not reduce average planning time. Under
+simplified Gaussian displacement noise, increasing planning clearance
+reduced collisions while making some cases unplannable. An 81-trial
+Webots study found different execution durations despite equal planned
+distances within each of nine box placements. A separate six-trial control
+showed that adding collinear midpoints to one planned polyline increased
+execution time from 83.616 to 123.232 simulation seconds. Follow-up
+12- and 36-trial controls recovered original-route timings by removing
+redundant points. These observations identify a waypoint-following
+implementation effect, not a new planning algorithm or general planner
+ranking. They motivate reporting representation, controller settings,
+and outcome denominators alongside path length and planning time.
+
+**Keywords:** grid search; robot navigation; benchmarking; obstacle
+clearance; waypoint representation; Webots.
 
 ## 1. Introduction
 
-A planned route is only one component of robot navigation. The grid
-representation determines which routes a planner can search. Safety
-margins change the available free space. The route-following controller
-then determines how the selected route is executed.
+Shortest-path search solves a specified graph problem. Executing the
+returned path introduces further choices: robot geometry, waypoint
+selection, speed scheduling, turning, and stopping criteria. A comparison
+that attributes every execution-time difference to the search algorithm
+can therefore obscure effects elsewhere in the navigation pipeline.
 
-RoboBench examines three questions:
+Established benchmarking research emphasizes shared problem definitions,
+multiple performance measures, and inspectable results [5, 6]. RoboBench
+applies these principles to a small, transparent simulation study. Its
+scope is controlled experimentation rather than a replacement for a
+community benchmark suite or a new navigation stack.
 
-1. How does grid spacing affect route availability, distance, and
-   planning computation?
-2. How does extra planning clearance affect execution under movement
-   uncertainty?
-3. How do route selection and waypoint representation affect execution
-   when planned distances are equal?
+The study asks:
 
-The project combines controlled 2D experiments with Webots execution
-studies. It evaluates established planning methods rather than proposing
-a new graph-search algorithm.
+1. **Representation:** How does grid spacing affect route availability,
+   shortest grid-path distance, and planning computation?
+2. **Clearance:** How does an added planning margin affect execution under
+   a specified displacement-noise model, including unavailable routes?
+3. **Execution:** Can equal-distance routes take different execution times,
+   and can redundant waypoint targets introduce delay on the same polyline?
 
-## 2. Background
+The contributions are an inspectable experimental implementation, archived
+results and figure-generation scripts, and controls separating planned
+geometry from waypoint sampling. Collinear-point removal is treated as
+routine preprocessing, not an algorithmic invention.
 
-Dijkstra described a method for finding minimum-length paths in graphs
-[1]. Hart, Nilsson, and Raphael developed the heuristic search framework
-associated with A-star [2]. LaValle presents discrete search methods,
-including breadth-first search, Dijkstra, and A-star, within a common
-planning framework [3, Chapter 2].
+All findings are conditional on the implemented models. The 2D uncertain
+motion experiment and the Webots wheeled-robot experiments are separate
+studies; the latter do not validate the former's noise model.
 
-Breadth-first search provides a shortest-path baseline when graph edges
-have equal cost. RoboBench uses four-connected grids with equal edge
-costs within each resolution.
+## 2. Related Work and Study Positioning
 
-Configuration-space planning accounts for robot geometry by excluding
-configurations that intersect obstacles [3, Chapter 4]. RoboBench uses
-conservative rectangular obstacle inflation, followed by geometric
-checks of returned paths.
+### 2.1 Graph search and configuration space
 
-Michel describes Webots as an environment for modelling, programming,
-and simulating mobile robots [4]. Here it provides a wheeled-robot
-execution environment distinct from the simplified 2D motion model.
+Dijkstra introduced a minimum-length graph-path procedure [1]. Hart,
+Nilsson, and Raphael established the heuristic-search framework associated
+with A-star [2]. LaValle discusses these methods and breadth-first search
+in discrete planning, and develops configuration-space representations
+for robot geometry [3, Chapters 2 and 4].
 
-This background establishes the methods used. It does not establish
-that the experimental questions represent an unexplored research gap.
+RoboBench uses equal-cost four-connected grids. Its shared A-star/Dijkstra
+implementation and separately implemented BFS are baselines under common
+assumptions. Their agreement is not an independent proof of correctness.
+Rectangular inflation conservatively approximates circular-robot clearance.
+
+### 2.2 Benchmark design and map diversity
+
+Sturtevant introduced shared grid-pathfinding maps and problem sets to
+improve comparability and examined how map properties affect evaluation
+[5]. This is directly relevant to RoboBench's 20-pixel-aligned generator:
+the generated cases cannot establish performance across diverse map
+families. The present study has not evaluated the Moving AI datasets.
+Their adoption would also require explicit choices about connectivity,
+robot radius, map scale, and obstacle interpretation.
+
+Moll, Şucan, and Kavraki developed motion-planning benchmarking infrastructure
+with extensible result storage and analysis [6]. Their discussion of
+multiple metrics and missing observations motivates reporting failure
+counts alongside successful-route distances. RoboBench uses its own CSV
+workflow; it neither uses OMPL in the experiments nor claims an equivalent
+benchmarking capability.
+
+### 2.3 Tracking and velocity selection
+
+Coulter describes Pure Pursuit tracking through lookahead geometry and
+examines parameter-dependent behaviour [7]. Macenski et al. develop
+Regulated Pure Pursuit, including velocity regulation and collision-related
+mechanisms for service-robot tracking [8]. These provide relevant controller
+baselines for future work.
+
+RoboBench instead uses sequential waypoint targets, heading correction,
+and a target-distance-dependent forward wheel command. Its observed delay
+should not be attributed to Pure Pursuit or navigation controllers in
+general. Removing collinear points changes this controller's target list;
+it is not a Pure Pursuit implementation or a comparative evaluation of
+published tracking methods.
+
+### 2.4 Uncertainty and geometric margins
+
+Blackmore, Ono, and Williams formulate path planning with explicit
+probabilistic failure constraints under their system assumptions [9].
+RoboBench's clearance sweep is substantially simpler: it selects fixed
+geometric margins and records outcomes under a chosen noise process.
+It propagates no planned state covariance, solves no chance constraint,
+and offers no certified probability-of-collision bound.
+
+### 2.5 Scope relative to prior work
+
+Webots supplies a robot-simulation environment [4]. The role of this study
+is to expose interactions among discretization, margins, and a deliberately
+simple execution policy using controlled comparisons. It does not establish
+a previously unexplored research gap or outperform the cited systems.
+The related-work comparison informs interpretation and future validation,
+not a claim that external benchmark results are directly comparable.
 
 ## 3. Methods
 
@@ -84,6 +144,11 @@ Planning uses conservative rectangular obstacle inflation. Returned
 routes are checked for endpoint correctness, valid steps, map boundaries,
 and circular robot clearance. Agreement between planners provides an
 additional consistency check rather than proof of correctness.
+
+The common 2D start and goal are (60, 200) and (540, 200) pixels. Grid
+locations are anchored to the start; comparisons use aligned endpoints.
+“No route” refers to this discrete, conservatively inflated problem, not
+necessarily to disconnected continuous free space.
 
 ### 3.2 Grid resolution and resolution retry
 
@@ -167,11 +232,14 @@ feedback. No motion noise was deliberately added.
 When heading error exceeded 0.15 radians, the robot turned in place.
 Otherwise, its nominal forward wheel speed was the smaller of
 1.5 radians per second and ten times the remaining waypoint distance
-in metres. Heading correction used gain 1.5, with wheel speeds limited
-to 2 radians per second.
+in metres. The distance-to-wheel-speed coefficient is therefore
+10 radians per second per metre. Heading correction used gain 1.5, with
+wheel speeds limited to 2 radians per second. The initial heading was
+zero radians, facing positive x. The simulation step was 32 milliseconds.
+Execution timing excluded planning and reset/settling.
 
 Physical box contact was detected by matching contact-point locations
-reported for the robot and named box. Two consecutive front-sensor
+reported for the robot and named box within 0.00001 metres. Two consecutive front-sensor
 readings at or above 120 triggered a separate obstacle-stop outcome.
 Planner-comparison trials had a 180-second execution limit.
 
@@ -221,7 +289,49 @@ producing 36 trials. Route/repetition blocks and condition order within
 each block were shuffled using seed 42.
 
 The environment, controller, nominal starting pose, reset procedure,
-and waypoint tolerance were held fixed.
+and waypoint tolerance were held fixed. Early bottom turn followed
+start, (-0.25, -0.16), (0.15, -0.16), (0.15, 0), and goal, in metres.
+Cleanup controls retained the 300-second execution limit. These were
+hand-specified-route tests, not additional planner comparisons.
+
+### 3.8 Outcomes, aggregation, and experimental units
+
+Planning feasibility, physical execution, and computation are separate
+outcomes. The clearance study reports success, collision, timeout, and
+unavailable-route counts over all scheduled cases. Successful-trial
+distance averages are conditional outcomes, not averages over failures.
+The common-map clearance comparison restricts analysis to the same
+12 maps with routes at every setting.
+
+Grid and retry timings first summarize repeated calls within a map/case
+by their median, then average those medians. The extended Webots summary
+gives each layout equal weight by averaging its three-repetition median.
+Waypoint-condition durations are means of three repetitions. Moving,
+turning, and idle categories are defined by issued commands, not by an
+independent physical motion classifier.
+
+A repeated timing call is not another map. Likewise, repeated execution
+of a route is not an independent environment. These samples are used
+descriptively; no pooled significance test treats them as independent
+environment draws. Outcome denominators accompany performance summaries,
+consistent with the missing-data concerns in benchmarking literature [6].
+
+### 3.9 Mechanistic interpretation of waypoint slowdown
+
+The following is an idealized derivation from the implemented controller,
+not a fitted model or an additional experiment. On a straight segment,
+assume aligned heading, negligible slip, continuous motion, and equal
+wheel commands. If wheel radius is r_w and the forward command is
+min(u_max, k_d d), then translational speed is r_w times that command.
+Inside the proportional region, remaining distance follows approximately
+dd/dt = -alpha d, where alpha = r_w k_d.
+
+The approximate time to reduce distance from d_0 to acceptance tolerance
+epsilon is ln(d_0 / epsilon) / alpha. Each added target can restart this
+approach phase. This explains why holding planned length fixed need not
+hold execution time fixed. The approximation excludes discrete stepping,
+heading corrections, target-switching geometry, and wheel dynamics; it
+does not predict the reported durations exactly.
 
 ## 4. Results
 
@@ -444,104 +554,182 @@ Full report: WAYPOINT_ROUTES_RESULTS.md.
 
 ## 5. Discussion
 
-Coarser grids reduced planning computation but sometimes removed routes
-or increased their distance. Trying coarse grids first did not provide
-an average speed benefit in the tested passage cases.
+### 5.1 The graph problem changes with resolution
 
-Extra clearance improved observed execution success under displacement
-noise, but also excluded routes. Minimizing collisions and maximizing
-completed tasks across all maps can therefore favour different settings.
+The coarser grid was cheaper to search in this implementation but sometimes
+lost routes or lengthened them. Agreement at 10 and 20 pixels on these
+maps does not identify a universally optimal spacing. The map generator's
+20-pixel alignment and the separate passage cases delimit this finding.
+Map diversity is a substantive validation requirement, not something that
+can be replaced by more timing repetitions [5].
 
-The extended Webots study showed consistent execution-time differences
-despite equal planned distances within each layout. These differences
-describe planner-selected routes executed by this controller, rather
-than intrinsic differences in planner computation speed.
+### 5.2 Margin selection trades route availability against observed safety
 
-The controlled waypoint experiment provides stronger evidence that route
-representation affects this controller's execution. Its forward-speed
-rule slows the robot as it approaches each waypoint. Inserting midpoints
-introduces additional slowdown targets without changing the planned
-geometric polyline.
+Eight pixels of extra clearance produced the highest overall completion
+among tested settings. Twelve pixels removed observed collisions but
+excluded more routes. Choosing a margin solely from collision counts would
+therefore answer a different question from maximizing completed tasks.
 
-However, this control does not quantify how much of the earlier
-between-planner difference was caused by waypoint count. Those routes
-also differed in segment lengths and turning requirements.
+The common-map analysis helps separate route availability from execution,
+but conditions on maps that remain plannable at every setting. Both the
+all-case and common-map denominators are needed. The tested Gaussian
+process and fixed margin do not yield the probabilistic guarantees of a
+chance-constrained planner [9].
 
-Executed distance can be shorter than the planned polyline because
-waypoints are accepted within a tolerance and steering can begin before
-their exact coordinates are reached. This does not demonstrate a better
-shortest-path solution.
+### 5.3 Separate planner cost from controller cost
 
-## 6. Limitations
+Equal-distance Webots routes differed in segment structure and execution
+duration. These are planner-selected routes under one tracking policy,
+not evidence that A-star computation takes longer than BFS computation.
+Moving-command time, turn episodes, and target tolerance make the observed
+differences more interpretable than total duration alone.
 
-Generated obstacles align to a 20-pixel grid, which can favour particular
-resolutions. Designed passage cases supplement this map set.
+The single-route insertion control held planned geometry fixed. Cleanup
+then recovered the original target list and timing; the multi-route control
+repeated this observation on three limited polylines. This supports the
+specific explanation that extra target-approach slowdowns cause a delay
+under the tested policy. The 47.4% insertion increase and 32.1% cleanup
+reduction use different reference durations, so they are not inconsistent.
 
-The 2D movement model has perfect position feedback and no wheel dynamics.
-It is distinct from Webots, so their execution measurements should not
-be pooled.
+Collinear cleanup is routine preprocessing, not a new tracking algorithm.
+The planner-comparison controller already used it. Consequently, cleanup
+cannot be presented as a remedy for all between-planner differences.
+Existing lookahead and velocity-regulating trackers [7, 8] are relevant
+comparisons that this study has not yet implemented.
 
-The extended Webots experiment contains nine placements of one box,
-rather than 81 independent environments. Repetition checks consistency
-under the reset procedure, not robustness to uncertainty.
+### 5.4 What the measurements establish
 
-The waypoint experiment tests one planned route, one controller
-configuration, and two waypoint representations. Identical planned
-geometry does not guarantee identical executed trajectories.
+Recorded durations are consistent under the tested reset procedure.
+Near-identical repetitions do not estimate behaviour under new maps,
+localization error, disturbances, or physical deployment. Bottom and Top
+are symmetric, limiting the information gained by treating them as separate
+geometries.
 
-Webots contact monitoring covers the named box rather than every
-possible scene collision. No motion noise was deliberately added,
-and pose feedback was obtained directly from the Supervisor.
+Executed distance can be shorter than the planned polyline because of
+waypoint tolerance and steering before exact target coordinates. This
+does not demonstrate a better shortest path. Successful-trial distance
+averages under noise also require their outcome counts, as failed trials
+are excluded. Multiple metrics and transparent missing outcomes follow
+the evaluation concerns discussed by Moll et al. [6].
 
-Trials sharing a map are not independent environment samples.
-Timing depends on hardware, system load, and implementation details.
-No confidence intervals or statistical significance tests are reported.
+## 6. Limitations and Threats to Validity
 
-Conservative obstacle inflation can exclude physically valid routes.
-No-route outcomes can arise from blocked endpoints, clearance margins,
-or grid representation, as well as an obstructed environment.
+**Construct validity.** The 2D model is a holonomic point-position controller
+with circular collision geometry and independent displacement noise.
+It is not a sensor, wheel-slip, or localization model. Webots uses perfect
+Supervisor pose feedback with no deliberately added motion noise. Results
+from these two models must not be pooled. Contact monitoring covers the
+named box, not every possible scene collision.
 
-Automated checks and agreement between planners do not eliminate every
-possible implementation error. A broader review of navigation benchmarks
-and controller-aware planning remains necessary before novelty claims.
+**Internal validity.** A-star and Dijkstra share code and all planners
+share assumptions. Agreement and separate geometric checks cannot rule out
+all common errors. Initial pose checks allow small deviations, and pose
+reset is not a claim that every simulator random state has been reset.
+No additional simulation random seed is recorded. The fixed order seed
+controls scheduling, not simulator randomness. Repeated execution may be
+nearly deterministic in the tested conditions.
 
-## 7. Reproducibility
+**External validity.** Generated maps align to a 20-pixel grid. Webots
+tests use one box, nine closely related placements, one start/goal pair,
+and three waypoint polylines, two of which are mirrors. The 81-trial study
+contains nine layouts, not 81 independent environments. No standardized
+external map suite, additional tracking controller, dynamic obstacles,
+or physical robot experiment was evaluated.
 
-Repository:
-https://github.com/ShauryaMahajan16/RoboBench
+**Measurement and inference.** Planning times vary with hardware, system
+load, and code revision; simulation durations depend on model and policy.
+No confidence intervals or significance tests are reported. A trial-level
+binomial interpretation would ignore dependence among trials sharing a
+map or route. Zero observed contacts is not a certified safety bound.
+Small goal-error differences do not establish greater accuracy.
 
-Archived 2D summaries and individual Webots trials are stored in data/.
-The archived 2D summaries do not contain every individual timing or
-motion trial.
+**Reproducibility completeness.** Individual Webots trials are archived,
+but the archived 2D summaries do not retain all raw calls or motion trials.
+Historical experiment commits and simulator settings are not yet recorded
+in a complete run-by-run manifest. Regenerating figures is weaker evidence
+than independently reproducing the simulations.
 
-The original five figures can be regenerated using:
+**Scope of novelty.** The work is a controlled implementation study of
+established methods. Broader related work and independent review are
+needed before making novelty or publication-readiness claims.
 
-`python plot_archived_results.py`
+## 7. Reproducibility and Evidence Availability
 
-The extended Webots report can be regenerated using:
+Repository: https://github.com/ShauryaMahajan16/RoboBench
 
-`python analyze_webots_extended.py`
+Archived 2D summaries and individual Webots records are in data/. Figures
+are in figures/. The archived summaries do not permit every raw 2D trial
+to be independently reanalyzed.
 
-The 81-trial experiment is recorded in data/webots_extended_trials.csv.
-The waypoint experiment is recorded in data/webots_waypoint_test.csv.
+On Windows, after creating the project virtual environment and installing
+Matplotlib, regenerate Figures 1–5 and Figure 6 respectively:
 
-REPRODUCING.md documents the recorded plotting environment and historical
-figure snapshot. WEBOTS_EXTENDED_RESULTS.md and WAYPOINT_RESULTS.md
-describe the subsequent experiments.
+```powershell
+.\.venv\Scripts\python.exe plot_archived_results.py
+.\.venv\Scripts\python.exe plot_waypoint_results.py
+```
 
-## 8. Conclusion
+Regenerate the extended Webots report:
 
-In the tested environments, grid resolution and planning clearance
-affected route availability, computation, and execution success.
+```powershell
+.\.venv\Scripts\python.exe analyze_webots_extended.py
+```
 
-Webots experiments showed that equal planned distance did not imply
-equal execution time. A controlled same-polyline experiment further
-showed that inserting collinear waypoints increased execution duration
-under the tested waypoint-following controller.
+These commands were successfully exercised from a fresh clone in a separate
+environment on the same Windows laptop. That check establishes the plotting
+and analysis workflow on that machine; it does not rerun the simulations
+or establish cross-platform reproducibility.
 
-These findings support evaluating route representation and controller
-behaviour alongside shortest-path distance when comparing navigation
-systems.
+| Study | Archived trial data | Detailed report |
+|---|---|---|
+| Initial nine-trial planner comparison | data/webots_layout_trials.csv | WEBOTS_LAYOUT_RESULTS.md |
+| Extended 81-trial planner comparison | data/webots_extended_trials.csv | WEBOTS_EXTENDED_RESULTS.md |
+| Six-trial waypoint insertion | data/webots_waypoint_test.csv | WAYPOINT_RESULTS.md |
+| Twelve-trial cleanup control | data/webots_waypoint_cleanup.csv | WAYPOINT_CLEANUP_RESULTS.md |
+| Thirty-six-trial multi-route control | data/webots_waypoint_routes.csv | WAYPOINT_ROUTES_RESULTS.md |
+
+Current controller names and functions are:
+
+- robobench_layout_trials: 81-trial planner comparison.
+- robobench_waypoint_test: 12-trial cleanup control.
+- robobench_waypoint_routes: 36-trial multi-route control.
+
+Historical nine- and six-trial controllers are earlier Git revisions.
+Reproducing them requires the matching revision, not only the current
+filename. Webots controllers append runs with run IDs; completeness and
+duplicate condition keys must be checked before aggregation.
+
+REPRODUCING.md records the plotting snapshot and environment. The reported
+plotting environment is not assumed to be the historical timing environment
+for every experiment. Exact experiment commits, Webots version, world
+settings, hardware, and all raw 2D trials should be captured before release
+as a fully specified research artifact.
+
+AI assistance was used in code development and manuscript drafting.
+Automated checks and recorded results do not replace author understanding,
+source verification, or independent technical review.
+
+## 8. Conclusion and Next Validation Steps
+
+Under the tested models, discretization and clearance changed planning
+cost, route availability, and observed execution outcomes. Equal planned
+distance did not ensure equal execution duration. Holding one polyline
+fixed while adding waypoint targets exposed a delay under the implemented
+distance-based speed policy; removing redundant points recovered the
+original-route timing on three tested polylines.
+
+The practical lesson is to specify the discrete problem and execution
+policy when interpreting planner comparisons. These observations do not
+establish a new search algorithm, general safety guarantee, or superiority
+over published navigation systems.
+
+The highest-priority extensions are: (1) external map families with explicit
+connectivity and footprint conventions [5]; (2) comparison with a documented
+lookahead tracker on identical polylines, measuring cross-track error and
+clearance as well as duration [7, 8]; and (3) paired uncertain-execution
+experiments on held-out maps, preserving raw records and summarizing
+uncertainty at the map level. These are proposed experiments, not completed
+results.
 
 ## References
 
@@ -555,9 +743,32 @@ Systems Science and Cybernetics, vol. 4, no. 2, pp. 100–107, 1968.
 https://doi.org/10.1109/TSSC.1968.300136
 
 [3] S. M. LaValle, Planning Algorithms. Cambridge University Press, 2006.
-https://msl.cs.uiuc.edu/~lavalle/planning/
+Author-hosted edition: https://msl.cs.uiuc.edu/~lavalle/planning/
 
 [4] O. Michel, “Cyberbotics Ltd. Webots: Professional Mobile Robot
 Simulation,” International Journal of Advanced Robotic Systems,
-vol. 1, no. 1, 2004.
-https://doi.org/10.5772/5618
+vol. 1, no. 1, 2004. https://doi.org/10.5772/5618
+
+[5] N. R. Sturtevant, “Benchmarks for Grid-Based Pathfinding,” IEEE
+Transactions on Computational Intelligence and AI in Games, vol. 4,
+no. 2, pp. 144–148, 2012.
+Author-hosted manuscript: https://www.cs.du.edu/~sturtevant/papers/benchmarks.pdf
+Benchmark repository: https://www.movingai.com/benchmarks/grids.html
+
+[6] M. Moll, I. A. Şucan, and L. E. Kavraki, “Benchmarking Motion Planning
+Algorithms: An Extensible Infrastructure for Analysis and Visualization,”
+IEEE Robotics & Automation Magazine, vol. 22, no. 3, pp. 96–102, 2015.
+https://doi.org/10.1109/MRA.2015.2448276
+
+[7] R. C. Coulter, “Implementation of the Pure Pursuit Path Tracking
+Algorithm,” Carnegie Mellon University, CMU-RI-TR-92-01, 1992.
+https://publications.ri.cmu.edu/implementation-of-the-pure-pursuit-path-tracking-algorithm
+
+[8] S. Macenski, S. Singh, F. Martin, and J. Gines, “Regulated Pure Pursuit
+for Robot Path Tracking,” 2023. Author manuscript, arXiv:2305.20026.
+https://arxiv.org/abs/2305.20026
+
+[9] L. Blackmore, M. Ono, and B. C. Williams, “Chance-Constrained Optimal
+Path Planning With Obstacles,” IEEE Transactions on Robotics, vol. 27,
+no. 6, pp. 1080–1094, 2011. https://doi.org/10.1109/TRO.2011.2161160
+Author manuscript: https://hdl.handle.net/1721.1/80914
