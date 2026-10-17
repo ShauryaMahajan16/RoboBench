@@ -195,6 +195,20 @@ within each repetition using seed 42. Both conditions used the same
 controller, nominal starting pose, reset procedure, and waypoint
 tolerance. The execution limit was 300 seconds.
 
+### 3.6 Collinear-waypoint cleanup control
+
+A follow-up experiment tested four conditions: the original route and
+the midpoint route, each with and without collinear-point cleanup.
+Each condition was executed three times, giving 12 trials.
+
+Cleanup retained corners and endpoints. It converted the ten-segment
+midpoint route back into the original five-segment route without
+changing the planned geometric polyline or its 0.820-metre length.
+
+The controller, nominal starting pose, reset procedure, and waypoint
+tolerance were held fixed. Condition order was shuffled within each
+repetition using seed 42. No motion noise was deliberately added.
+
 ## 4. Results
 
 ### 4.1 Grid resolution
@@ -356,6 +370,33 @@ from 83.616 to 123.232 simulation seconds. Most of the increase occurred
 during moving commands. All six trials reached the goal without detected
 box contact. The approximately 0.032-second idle component is too small
 to distinguish at this scale.
+
+### 4.8 Collinear-waypoint cleanup
+
+All 12 trials reached the goal without detected box contact.
+
+| Condition | Collision-free goals | Mean execution | Maximum goal error |
+|---|---:|---:|---:|
+| Original / unchanged | 3/3 | 83.616 s | 0.007963 m |
+| Midpoints / unchanged | 3/3 | 123.232 s | 0.007970 m |
+| Original / cleanup | 3/3 | 83.616 s | 0.007962 m |
+| Midpoints / cleanup | 3/3 | 83.616 s | 0.007963 m |
+
+Cleanup reduced midpoint-route execution time by 39.616 seconds,
+approximately 32.1% relative to the unchanged midpoint condition.
+The original route and its execution duration were unchanged at the
+displayed precision.
+
+This demonstrates the benefit of removing redundant waypoint slowdown
+targets for this route and controller. It does not establish a new
+planning algorithm or general performance improvement.
+
+The planner-comparison experiments already removed collinear grid
+points. This cleanup therefore does not eliminate their differences
+in route geometry or explain all between-planner execution differences.
+
+Archived data: data/webots_waypoint_cleanup.csv.
+Full report: WAYPOINT_CLEANUP_RESULTS.md.
 
 ## 5. Discussion
 
