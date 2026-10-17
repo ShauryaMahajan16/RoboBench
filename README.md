@@ -194,7 +194,7 @@ Controllers:
 | Controller | Purpose |
 |---|---|
 | `robobench_layout_trials` | Nine box placements, three planners, three repetitions: 81 trials |
-| `robobench_waypoint_test` | Same planned polyline with original waypoints or extra midpoints: six trials |
+| `robobench_waypoint_test` | Original and midpoint routes, with and without collinear-point cleanup: 12 trials |
 
 To run an experiment:
 
@@ -209,7 +209,7 @@ The controllers set the tested box placements and reset the robot.
 They append results to separate CSV files:
 
 - `results/webots_extended_trials.csv`
-- `results/webots_waypoint_test.csv`
+- `results/webots_waypoint_cleanup.csv`
 
 The current extended controller differs from the historical
 nine-trial controller. Historical nine-trial data and Figure 5
