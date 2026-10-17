@@ -10,12 +10,11 @@ from controller import Supervisor
 
 
 PROJECT = Path(__file__).resolve().parents[3]
-OUTPUT = PROJECT / "results" / "webots_waypoint_test.csv"
+OUTPUT = PROJECT / "results" / "webots_waypoint_cleanup.csv"
 RUN_ID = datetime.now(timezone.utc).isoformat()
 
 START = (-0.25, 0.0)
 GOAL = (0.25, 0.0)
-
 BASE_ROUTE = [
     START,
     (-0.15, 0.0),
@@ -25,9 +24,9 @@ BASE_ROUTE = [
     GOAL,
 ]
 
+REPETITIONS = 3
 TOLERANCE = 0.008
 MAX_SECONDS = 300.0
-REPETITIONS = 3
 
 robot = Supervisor()
 timestep = int(robot.getBasicTimeStep())
@@ -81,9 +80,7 @@ def collision():
 
 
 def route_length(route):
-    return sum(
-        math.dist(a, b) for a, b in zip(route, route[1:])
-    )
+    return sum(math.dist(a, b) for a, b in zip(route, route[1:]))
 
 
 def add_midpoints(route):
@@ -94,17 +91,43 @@ def add_midpoints(route):
     return result
 
 
-ROUTES = {
-    "Original waypoints": BASE_ROUTE,
-    "Extra midpoints": add_midpoints(BASE_ROUTE),
-}
+def remove_collinear(route):
+    if len(route) <= 2:
+        return list(route)
 
-if not math.isclose(
-    route_length(ROUTES["Original waypoints"]),
-    route_length(ROUTES["Extra midpoints"]),
-    abs_tol=1e-12,
-):
-    raise RuntimeError("Route lengths differ.")
+    result = [route[0]]
+    for index in range(1, len(route) - 1):
+        a = result[-1]
+        b = route[index]
+        c = route[index + 1]
+
+        incoming = (b[0] - a[0], b[1] - a[1])
+        outgoing = (c[0] - b[0], c[1] - b[1])
+        cross = incoming[0] * outgoing[1] - incoming[1] * outgoing[0]
+        dot = incoming[0] * outgoing[0] + incoming[1] * outgoing[1]
+
+        # Retain corners and reversals. Remove only forward,
+        # collinear points on these exact axis-aligned routes.
+        if abs(cross) > 1e-12 or dot <= 0:
+            result.append(b)
+
+    result.append(route[-1])
+    return result
+
+
+DENSE_ROUTE = add_midpoints(BASE_ROUTE)
+
+if remove_collinear(BASE_ROUTE) != BASE_ROUTE:
+    raise RuntimeError("Cleanup unexpectedly changed the original route.")
+if remove_collinear(DENSE_ROUTE) != BASE_ROUTE:
+    raise RuntimeError("Cleanup did not recover the original polyline.")
+
+CONDITIONS = [
+    ("Original / unchanged", BASE_ROUTE, False),
+    ("Midpoints / unchanged", DENSE_ROUTE, False),
+    ("Original / cleanup", BASE_ROUTE, True),
+    ("Midpoints / cleanup", DENSE_ROUTE, True),
+]
 
 
 def reset_trial():
@@ -136,9 +159,7 @@ def draw_route(route):
         if node is not None:
             node.remove()
 
-    points = " ".join(
-        f"{x:.6f} {y:.6f} 0.004" for x, y in route
-    )
+    points = " ".join(f"{x:.6f} {y:.6f} 0.004" for x, y in route)
     indices = " ".join(str(i) for i in range(len(route)))
 
     robot.getRoot().getField("children").importMFNodeFromString(
@@ -162,7 +183,6 @@ def execute(route):
     previous_position = robot_node.getPosition()[:2]
     previous_command = "IDLE"
     durations = {"IDLE": 0.0, "MOVING": 0.0, "TURNING": 0.0}
-
     waypoint = 1
     travelled = 0.0
     obstacle_count = 0
@@ -207,7 +227,6 @@ def execute(route):
                 sum(durations.values()), elapsed, abs_tol=1e-6
             ):
                 raise RuntimeError("Time accounting mismatch.")
-
             return {
                 "outcome": outcome,
                 "box_collision_detected": contact,
@@ -223,9 +242,10 @@ def execute(route):
         dx = route[waypoint][0] - current[0]
         dy = route[waypoint][1] - current[1]
         desired = math.atan2(dy, dx)
+        current_heading = heading()
         error = math.atan2(
-            math.sin(desired - heading()),
-            math.cos(desired - heading()),
+            math.sin(desired - current_heading),
+            math.cos(desired - current_heading),
         )
         turn = clamp(1.5 * error)
 
@@ -244,7 +264,7 @@ def execute(route):
         right.setVelocity(right_speed)
         previous_command = command
 
-        if now - last_print >= 20:
+        if now - last_print >= 30:
             print(f"{command} | Waypoint {waypoint}/{len(route) - 1}")
             last_print = now
 
@@ -274,18 +294,27 @@ def main():
 
     rng = random.Random(42)
     results = []
-
-    print("Starting six same-geometry waypoint trials.")
-    print("Both planned routes are 0.820 m long.")
+    print("Starting 12 waypoint-cleanup trials.")
 
     for repetition in range(1, REPETITIONS + 1):
-        order = list(ROUTES)
+        order = CONDITIONS.copy()
         rng.shuffle(order)
 
-        for condition in order:
-            route = ROUTES[condition]
+        for condition, input_route, cleanup in order:
+            route = (
+                remove_collinear(input_route)
+                if cleanup else list(input_route)
+            )
+
+            if not math.isclose(
+                route_length(route),
+                route_length(input_route),
+                abs_tol=1e-12,
+            ):
+                raise RuntimeError("Cleanup changed planned distance.")
+
             print(
-                f"\n--- Trial {len(results) + 1}/6 | "
+                f"\n--- Trial {len(results) + 1}/12 | "
                 f"Repeat {repetition} | {condition} ---"
             )
             reset_trial()
@@ -297,8 +326,11 @@ def main():
                 "trial_number": len(results) + 1,
                 "repetition": repetition,
                 "condition": condition,
-                "waypoints_json": json.dumps(route),
-                "route_segments": len(route) - 1,
+                "cleanup_enabled": cleanup,
+                "input_waypoints_json": json.dumps(input_route),
+                "executed_waypoints_json": json.dumps(route),
+                "input_segments": len(input_route) - 1,
+                "executed_segments": len(route) - 1,
                 "planned_distance_m": route_length(route),
                 **result,
                 "waypoint_tolerance_m": TOLERANCE,
@@ -313,15 +345,16 @@ def main():
             }
             save(row)
             results.append(row)
+
             print(
                 f"RESULT: {result['outcome']} | "
                 f"Total: {result['simulation_time_s']:.3f} s | "
-                f"Moving: {result['move_command_time_s']:.3f} s | "
-                f"Turning: {result['turn_command_time_s']:.3f} s"
+                f"Goal error: {result['goal_error_m']:.6f} m | "
+                f"Box contact: {result['box_collision_detected']}"
             )
 
-    print("\n--- WAYPOINT CONTROL COMPLETE ---")
-    for condition in ROUTES:
+    print("\n--- WAYPOINT CLEANUP COMPLETE ---")
+    for condition, _, _ in CONDITIONS:
         selected = [r for r in results if r["condition"] == condition]
         successes = [
             r for r in selected
@@ -329,7 +362,6 @@ def main():
             and not r["box_collision_detected"]
         ]
         print(f"{condition} | Collision-free goals: {len(successes)}/3")
-
         if len(successes) == REPETITIONS:
             print(
                 f"  Mean total: "
@@ -338,9 +370,11 @@ def main():
                 f"{mean(r['move_command_time_s'] for r in successes):.3f} s"
                 f" | Turning: "
                 f"{mean(r['turn_command_time_s'] for r in successes):.3f} s"
+                f" | Max goal error: "
+                f"{max(r['goal_error_m'] for r in successes):.6f} m"
             )
         else:
-            print("  Inspect individual outcomes before comparing times.")
+            print("  Inspect failures before comparing times.")
 
     print(f"Run ID: {RUN_ID}")
     print(f"Results appended to: {OUTPUT}")
