@@ -209,6 +209,20 @@ The controller, nominal starting pose, reset procedure, and waypoint
 tolerance were held fixed. Condition order was shuffled within each
 repetition using seed 42. No motion noise was deliberately added.
 
+### 3.7 Multi-route waypoint cleanup
+
+The four waypoint conditions were evaluated on three planned polylines:
+Bottom, its mirrored Top route, and an Early bottom turn route.
+Each planned polyline was 0.820 metres long.
+
+Bottom and Top each had five original segments. Early bottom turn had
+four. Each route/condition combination was repeated three times,
+producing 36 trials. Route/repetition blocks and condition order within
+each block were shuffled using seed 42.
+
+The environment, controller, nominal starting pose, reset procedure,
+and waypoint tolerance were held fixed.
+
 ## 4. Results
 
 ### 4.1 Grid resolution
@@ -397,6 +411,36 @@ in route geometry or explain all between-planner execution differences.
 
 Archived data: data/webots_waypoint_cleanup.csv.
 Full report: WAYPOINT_CLEANUP_RESULTS.md.
+
+### 4.9 Multi-route cleanup results
+
+All 36 trials reached the goal without detected box contact. Maximum
+reported goal errors were below 0.008 metres.
+
+| Route | Original unchanged | Midpoints unchanged | Original cleanup | Midpoints cleanup |
+|---|---:|---:|---:|---:|
+| Bottom | 83.616 s | 123.232 s | 83.616 s | 83.616 s |
+| Top | 83.616 s | 123.232 s | 83.616 s | 83.616 s |
+| Early bottom turn | 74.368 s | 107.584 s | 74.368 s | 74.368 s |
+
+Values are mean execution durations across three repetitions.
+
+Cleanup reduced midpoint-route execution time by approximately 32.1%
+for Bottom and Top, and 30.9% for Early bottom turn. Cleaned midpoint
+routes recovered the original waypoint lists and matched their
+execution durations at the displayed precision.
+
+The Early bottom turn route remained faster despite equal planned
+length. Removing redundant collinear points does not remove differences
+in corners, segment lengths, or controller responses.
+
+These results extend the observation to three polylines in one
+environment. Top and Bottom are mirror images, so geometric diversity
+remains limited. Repetitions are consistency checks, not independent
+environments or robustness trials.
+
+Archived data: data/webots_waypoint_routes.csv.
+Full report: WAYPOINT_ROUTES_RESULTS.md.
 
 ## 5. Discussion
 
