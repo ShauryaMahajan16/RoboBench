@@ -1,0 +1,5 @@
+extra_clearance_px,maps_with_routes,total_trials,successes,collisions,timeouts,no_route,success_rate_all_percent,common_maps,success_rate_common_percent,mean_common_planned_distance_px,mean_success_travelled_distance_px
+0,19,400,193,187,0,20,48.25,12,51.666666666666664,650.0,1952.2542279939544
+4,19,400,193,187,0,20,48.25,12,51.666666666666664,650.0,1952.2542279939544
+8,14,400,256,24,0,120,64.0,12,100.0,713.3333333333334,2255.653845329791
+12,12,400,240,0,0,160,60.0,12,100.0,713.3333333333334,2232.935777566066
