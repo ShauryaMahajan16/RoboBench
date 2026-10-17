@@ -1,4 +1,4 @@
-name: RoboBench Tests
+name: RoboBench tests
 
 on: [push, pull_request, workflow_dispatch]
 
@@ -50,3 +50,6 @@ jobs:
 
       - name: Check motion and swept collisions
         run: python test_motion.py
+
+      - name: Check Webots geometry conversion
+        run: python test_world_geometry.py
