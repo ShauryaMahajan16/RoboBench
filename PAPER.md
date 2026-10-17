@@ -2,7 +2,7 @@
 
 Author: Shaurya Mahajan
 
-Status: Initial draft. Related work, references, figures, and additional
+Status: Working draft. Related work, references, and additional
 experimental validation remain to be completed.
 
 ## Abstract
@@ -67,9 +67,17 @@ and spacing. Execution order was shuffled using a fixed seed. Timing
 excluded external route validation and file writing.
 
 A separate experiment evaluated 244 passage layouts. Passage widths
-were 20, 30, 40, and 60 pixels, with 61 vertical positions per width.
+were 20, 30, 40, and 60 pixels, with passage centres at every integer
+y-coordinate from 160 through 220.
+
 Fixed 10-pixel A-star was compared with a strategy that tried 40,
-20, and 10 pixels, stopping at the first successful search.
+20, and 10 pixels, stopping at the first successful search. This is
+resolution retry, rather than a spatially adaptive grid.
+
+Each method received two warm-up runs and ten recorded runs per case.
+Retry timing included the complete planning call, input checks, and
+all attempted resolutions. External validation and file writing
+were excluded.
 
 ### 2.3 Movement uncertainty and planning clearance
 
@@ -82,20 +90,40 @@ The robot used a one-pixel waypoint tolerance and a 10,000-step limit.
 Collision checking covered the entire movement segment; obstacle
 touching counted as collision.
 
-The noise experiment used 19 reachable maps and 20 motion seeds per map.
+A-star planned on a 20-pixel grid. The noise experiment used 19 reachable
+maps from generated seeds 0 through 19; seed 10 had no planned route
+and was excluded. Each noise level used the same maps and 20 motion
+seeds per map.
+
+Noise standard deviations were 0, 0.25, 0.5, 1, and 2 pixels per axis
+per movement step.
+
 The clearance experiment included all 20 generated maps, including
 unavailable routes. Extra planning clearances were 0, 4, 8, and 12 pixels,
 with movement noise fixed at sigma 2 pixels per axis per step.
+
+The physical radius remained 12 pixels. Planning used this radius plus
+the selected clearance, including at map boundaries. Each setting used
+20 motion trials per map, with matched trial seeds across settings.
 
 ### 2.4 Webots execution
 
 An E-puck robot followed routes around a static box in three placements.
 Each placement was tested once with each planner, producing nine trials.
+Planner order was shuffled within each layout using a fixed seed.
 
 Obstacle footprints were obtained from the Webots world geometry.
 Trials used the same route-following controller, perfect Supervisor
 position and orientation feedback, and no deliberately added motion
 noise. Physical contact monitoring covered the named obstacle box.
+
+The planning grid spacing was 20 pixels, with a planning radius of
+40 pixels. Planner coordinates were mapped to the world at 0.001 metres
+per pixel. These settings differ from the 2D motion experiments.
+
+The start and goal were approximately (-0.25, 0) and (0.25, 0) metres.
+Collinear grid points were removed before execution, retaining endpoints
+and turns. The waypoint tolerance was 0.008 metres.
 
 Execution duration was measured in simulation seconds, separately from
 planning computation time.
@@ -118,6 +146,13 @@ The 10- and 20-pixel grids returned identical shortest distances on all
 recovered six routes and shortened routes on 39 of the 89 maps reachable
 at both spacings.
 
+![Route availability and planning time at three grid spacings](figures/01_grid_resolution.png)
+
+**Figure 1.** Grid resolution results on 100 generated maps. Left:
+number of maps with a route; all three planners agreed. Right: mean
+of per-map median planning times, including no-route cases. Markers
+represent the three tested spacings; connecting lines guide the eye.
+
 ### 3.2 Coarse-to-fine retry
 
 Both fixed 10-pixel planning and resolution retry found routes in
@@ -130,7 +165,36 @@ and 6.880 ms.
 Retry returned longer routes in 41 successful cases. Mean extra distance
 across all 153 successful cases was 8.0 pixels, with a maximum of 60 pixels.
 
-### 3.3 Planning clearance under movement noise
+![Planning times for fixed fine-grid search and resolution retry](figures/02_resolution_retry.png)
+
+**Figure 2.** Mean of per-case median planning times for fixed 10-pixel
+A-star and coarse-to-fine retry. Groups contain 153 cases with routes
+and 91 cases without routes. Retry timing includes all attempted
+resolutions. Retry did not reduce average planning time in either group.
+
+### 3.3 Movement uncertainty
+
+At noise sigma values of 0, 0.25, 0.5, and 1 pixel per axis per step,
+all 380 trials per setting reached the goal. At sigma 2, 193 of 380
+trials succeeded and 187 collided. No timeouts occurred.
+
+Mean travelled distance among successful trials increased from
+650.5 pixels at zero noise to 853.4 pixels at sigma 1, approximately
+a 31% increase.
+
+At sigma 2, mean successful-trial distance was 1952.3 pixels. This
+average excludes failed trials and therefore describes a selected
+subset of outcomes.
+
+![Success rate and successful-trial distance under movement noise](figures/03_motion_noise.png)
+
+**Figure 3.** Movement-noise results using 19 planned maps and 20 motion
+seeds per map per noise setting. Left: success rate over 380 trials.
+Right: mean travelled distance among successful trials only. The
+successful subset changes at sigma 2. Connecting lines guide the eye
+between tested settings.
+
+### 3.4 Planning clearance under movement noise
 
 | Extra clearance | Successes / 400 | Collisions | No-route cases |
 |---|---:|---:|---:|
@@ -147,7 +211,15 @@ On the 12 maps reachable at every clearance, successes increased from
 124/240 at zero extra clearance to 240/240 at eight pixels. Mean planned
 distance increased from 650.0 to 713.3 pixels.
 
-### 3.4 Webots execution
+![Outcome proportions and matched-map success across planning clearances](figures/04_planning_clearance.png)
+
+**Figure 4.** Planning clearance at fixed movement-noise sigma 2.
+Left: outcome proportions across 400 cases per setting, including
+unavailable routes. Right: success rates on the same 12 maps reachable
+at every clearance, with 240 trials per setting. Observed 100% success
+in this subset is not a guarantee of future reliability.
+
+### 3.5 Webots execution
 
 | Planner | Goals reached | Detected box collisions | Mean execution |
 |---|---:|---:|---:|
@@ -162,6 +234,15 @@ contained four.
 These observations show that equal planned distance did not produce
 equal execution time in this controller and layout set. They do not
 establish a general ranking of the planners.
+
+![Webots execution duration by planner and box placement](figures/05_webots_execution.png)
+
+**Figure 5.** Execution duration in simulation seconds for three planners
+on three box placements. Each bar represents one trial. All nine trials
+reached the goal without detected contact with the named box. Planned
+distances matched within each layout: 0.820 metres for Centre and
+0.740 metres for Right-up and Left-down. These are motion execution
+times, not planning computation times.
 
 ## 4. Discussion
 
@@ -178,6 +259,14 @@ The controller slows near waypoints, and selected routes differed in
 segment lengths and turning requirements. Further controlled experiments
 are needed to separate these effects.
 
+Executed distance can be shorter than the planned polyline because the
+controller accepts waypoints within a tolerance and can turn before
+reaching their exact coordinates. This does not demonstrate a better
+shortest-path solution.
+
+The figures report descriptive results. They do not include confidence
+intervals or statistical significance claims.
+
 ## 5. Limitations
 
 Generated obstacles align to a 20-pixel grid, which can favour particular
@@ -189,13 +278,17 @@ not be pooled.
 
 The Webots study uses one box, three placements, and one trial per
 planner per placement. It cannot establish reliability or general
-performance differences.
+performance differences. Contact monitoring covers the named box,
+rather than every possible collision in the scene.
 
 Trials sharing a map are not independent environment samples.
 Timing depends on hardware, system load, and implementation details.
 No statistical significance analysis has been performed.
 
 Conservative obstacle inflation can exclude physically valid routes.
+No-route outcomes can arise from blocked endpoints, conservative
+clearance, or grid representation, as well as an obstructed environment.
+
 Automated checks and agreement between planners do not eliminate every
 possible implementation error.
 
