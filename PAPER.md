@@ -347,6 +347,16 @@ while turning-command time decreased by 0.160 seconds.
 All three repetitions within each condition had identical durations
 at the displayed precision.
 
+![Execution breakdown for the same route with different waypoint counts](figures/06_waypoint_control.png)
+
+**Figure 6.** Mean execution durations across three repetitions per
+condition. Both waypoint representations describe the same 0.820-metre
+planned polyline. Inserting collinear midpoints increased total duration
+from 83.616 to 123.232 simulation seconds. Most of the increase occurred
+during moving commands. All six trials reached the goal without detected
+box contact. The approximately 0.032-second idle component is too small
+to distinguish at this scale.
+
 ## 5. Discussion
 
 Coarser grids reduced planning computation but sometimes removed routes
